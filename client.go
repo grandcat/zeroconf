@@ -244,15 +244,15 @@ func (c *client) query(params *LookupParams) error {
 					entries[rr.Hdr.Name].Text = rr.Txt
 					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
 				case *dns.A:
-					for _, e := range entries {
-						if e.HostName == rr.Hdr.Name {
-							// assign rr.A
+					for k, e := range entries {
+						if e.HostName == rr.Hdr.Name && entries[k].AddrIPv4 == nil {
+							entries[k].AddrIPv4 = rr.A
 						}
 					}
 				case *dns.AAAA:
-					for _, e := range entries {
-						if e.HostName == rr.Hdr.Name {
-							// assign rr.AAAA
+					for k, e := range entries {
+						if e.HostName == rr.Hdr.Name && entries[k].AddrIPv6 == nil {
+							entries[k].AddrIPv6 = rr.AAAA
 						}
 					}
 				}

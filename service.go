@@ -60,6 +60,8 @@ type ServiceEntry struct {
 	Port     int      // Service Port
 	Text     []string // Service info served as a TXT record
 	TTL      uint32   // TTL of the service record
+	AddrIPv4 net.IP   // Host machine IPv4 address
+	AddrIPv6 net.IP   // Host machine IPv6 address
 }
 
 func NewServiceEntry(instance, service, domain string) *ServiceEntry {
@@ -69,12 +71,7 @@ func NewServiceEntry(instance, service, domain string) *ServiceEntry {
 		0,
 		[]string{},
 		0,
+		nil,
+		nil,
 	}
-}
-
-// Zone contains all required properties to register & announce a service
-type Zone struct {
-	ServiceEntry
-	ipv4Addr net.IP // Host machine IPv4 address
-	ipv6Addr net.IP // Host machine IPv6 address
 }
