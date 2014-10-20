@@ -5,7 +5,7 @@ import (
 	"net"
 )
 
-// Basic service description that contains instance name, service type & domain
+// ServiceRecord contains the basic description of a service, which contains instance name, service type & domain
 type ServiceRecord struct {
 	Instance string // Instance name (e.g. "My web page")
 	Service  string // Service name (e.g. _http._tcp.)
@@ -16,7 +16,8 @@ type ServiceRecord struct {
 	serviceInstanceName string
 }
 
-// Returns complete service name (e.g. _foobar._tcp.local.)
+// Returns complete service name (e.g. _foobar._tcp.local.), which is composed
+// from a service name (also referred as service type) and a domain.
 func (s *ServiceRecord) ServiceName() string {
 	if s.serviceName == "" {
 		s.serviceName = fmt.Sprintf("%s.%s.", trimDot(s.Service), trimDot(s.Domain))
@@ -24,7 +25,8 @@ func (s *ServiceRecord) ServiceName() string {
 	return s.serviceName
 }
 
-// Returns complete service instance name (e.g. MyDemo\ Service._foobar._tcp.local.)
+// Returns complete service instance name (e.g. MyDemo\ Service._foobar._tcp.local.),
+// which is composed from service instance name, service name and a domain.
 func (s *ServiceRecord) ServiceInstanceName() string {
 	// If no instance name provided we cannot compose service instance name
 	if s.Instance == "" {
@@ -37,6 +39,7 @@ func (s *ServiceRecord) ServiceInstanceName() string {
 	return s.serviceInstanceName
 }
 
+// Constructs a ServiceRecord structure by given arguments
 func NewServiceRecord(instance, service, domain string) *ServiceRecord {
 	return &ServiceRecord{instance, service, domain, "", ""}
 }
@@ -47,6 +50,7 @@ type LookupParams struct {
 	Entries chan<- *ServiceEntry // Entries Channel
 }
 
+// Constructs a LookupParams structure by given arguments
 func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *LookupParams {
 	return &LookupParams{
 		*NewServiceRecord(instance, service, domain),
@@ -54,6 +58,9 @@ func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEn
 	}
 }
 
+// ServiceEntry represents a browse/lookup result for client API.
+// It is also used to configure service registration (server API), which is
+// used to answer multicast queries.
 type ServiceEntry struct {
 	ServiceRecord
 	HostName string   // Host machine DNS name
@@ -64,6 +71,7 @@ type ServiceEntry struct {
 	AddrIPv6 net.IP   // Host machine IPv6 address
 }
 
+// Constructs a ServiceEntry structure by given arguments
 func NewServiceEntry(instance, service, domain string) *ServiceEntry {
 	return &ServiceEntry{
 		*NewServiceRecord(instance, service, domain),

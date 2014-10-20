@@ -178,8 +178,10 @@ func (c *client) query(params *LookupParams) error {
 	// send the query
 	m := new(dns.Msg)
 	if serviceInstanceName != "" {
-		m.SetQuestion(serviceInstanceName, dns.TypeSRV)
-		m.SetQuestion(serviceInstanceName, dns.TypeTXT)
+		m.Question = []dns.Question{
+			dns.Question{serviceInstanceName, dns.TypeSRV, dns.ClassINET},
+			dns.Question{serviceInstanceName, dns.TypeTXT, dns.ClassINET},
+		}
 		m.RecursionDesired = false
 	} else {
 		m.SetQuestion(serviceName, dns.TypePTR)
