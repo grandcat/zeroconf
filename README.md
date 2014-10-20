@@ -106,3 +106,38 @@ func main() {
     }
 }
 ```
+
+
+##Registering a service proxy (manually specifying host/ip and avoiding lookups)
+
+```
+package main
+
+import (
+    "log"
+    "os"
+    "os/signal"
+    "time"
+
+    "github.com/oleksandr/bonjour"
+)
+
+func main() {
+    // Run registration (blocking call)
+    exitCh, err := bonjour.RegisterProxy("Proxy Service", "_foobar._tcp", "", 9999, "octopus", "10.0.0.111", []string{"txtv=1", "app=test"}, nil)
+    if err != nil {
+        log.Fatalln(err.Error())
+    }
+
+    // Ctrl+C handling
+    handler := make(chan os.Signal, 1)
+    signal.Notify(handler, os.Interrupt)
+    for sig := range handler {
+        if sig == os.Interrupt {
+            exitCh <- true
+            time.Sleep(1e9)
+            break
+        }
+    }
+}
+```

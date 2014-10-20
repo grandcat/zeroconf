@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -101,9 +102,54 @@ func Register(instance, service, domain string, port int, text []string, iface *
 
 // Register a service proxy by given argument. This call will skip the hostname/IP lookup and
 // will use the provided values.
-//func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, iface *net.Interface) (chan<- bool, error) {
-//	return nil, nil
-//}
+func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, iface *net.Interface) (chan<- bool, error) {
+	entry := NewServiceEntry(instance, service, domain)
+	entry.Port = port
+	entry.Text = text
+	entry.HostName = host
+
+	if entry.Instance == "" {
+		return nil, fmt.Errorf("Missing service instance name")
+	}
+	if entry.Service == "" {
+		return nil, fmt.Errorf("Missing service name")
+	}
+	if entry.HostName == "" {
+		return nil, fmt.Errorf("Missing host name")
+	}
+	if entry.Domain == "" {
+		entry.Domain = "local"
+	}
+	if entry.Port == 0 {
+		return nil, fmt.Errorf("Missing port")
+	}
+
+	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
+		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
+	}
+
+	ipAddr := net.ParseIP(ip)
+	if ipAddr == nil {
+		return nil, fmt.Errorf("Failed to parse given IP: %v", ip)
+	} else if ipv4 := ipAddr.To4(); ipv4 != nil {
+		entry.AddrIPv4 = ipAddr
+	} else if ipv6 := ipAddr.To16(); ipv6 != nil {
+		entry.AddrIPv4 = ipAddr
+	} else {
+		return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
+	}
+
+	s, err := newServer(iface)
+	if err != nil {
+		return nil, err
+	}
+
+	s.service = entry
+	go s.mainloop()
+	go s.probe()
+
+	return s.shutdownCh, nil
+}
 
 // Server structure incapsulates both IPv4/IPv6 UDP connections
 type server struct {
