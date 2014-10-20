@@ -101,41 +101,9 @@ func Register(instance, service, domain string, port int, text []string, iface *
 
 // Register a service proxy by given argument. This call will skip the hostname/IP lookup and
 // will use the provided values.
-func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, iface *net.Interface) (chan<- bool, error) {
-	/*
-		record := newServiceRecord(instance, service, domain, port, text)
-		record.HostName = host
-
-		ipAddr := net.ParseIP(ip)
-		if ipAddr == nil {
-			return nil, fmt.Errorf("Failed to parse given IP: %v", ip)
-		} else if ipv4 := ipAddr.To4(); ipv4 != nil {
-			record.ipv4Addr = ipAddr
-		} else if ipv6 := ipAddr.To16(); ipv6 != nil {
-			record.ipv6Addr = ipAddr
-		} else {
-			return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
-		}
-
-		err := record.initForRegistration()
-		if err != nil {
-			return nil, err
-		}
-
-		responder, err := newResponder(iface)
-		if err != nil {
-			return nil, err
-		}
-
-		responder.record = record
-		responder.mode = responderModeRegister
-
-		go responder.mainloop()
-
-		return responder.exitCh, nil
-	*/
-	return nil, nil
-}
+//func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, iface *net.Interface) (chan<- bool, error) {
+//	return nil, nil
+//}
 
 // Server structure incapsulates both IPv4/IPv6 UDP connections
 type server struct {
