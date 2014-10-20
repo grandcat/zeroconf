@@ -3,9 +3,11 @@ package bonjour
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"os"
 	"sync"
+	"time"
 
 	"code.google.com/p/go.net/ipv4"
 	"code.google.com/p/go.net/ipv6"
@@ -92,6 +94,7 @@ func Register(instance, service, domain string, port int, text []string, iface *
 
 	s.service = entry
 	go s.mainloop()
+	go s.probe()
 
 	return s.shutdownCh, nil
 }
@@ -218,6 +221,8 @@ func (s *server) shutdown() error {
 	s.shutdownLock.Lock()
 	defer s.shutdownLock.Unlock()
 
+	s.unregister()
+
 	if s.shouldShutdown {
 		return nil
 	}
@@ -262,36 +267,45 @@ func (s *server) parsePacket(packet []byte, from net.Addr) error {
 
 // handleQuery is used to handle an incoming query
 func (s *server) handleQuery(query *dns.Msg, from net.Addr) error {
-	var resp dns.Msg
-	resp.SetReply(query)
-	resp.Answer = []dns.RR{}
-	resp.Extra = []dns.RR{}
-
 	// Ignore answer for now
 	if len(query.Answer) > 0 {
 		return nil
 	}
+	// Ignore questions with Authorative section for now
+	if len(query.Ns) > 0 {
+		return nil
+	}
 
 	// Handle each question
+	var (
+		resp dns.Msg
+		err  error
+	)
 	if len(query.Question) > 0 {
 		for i, _ := range query.Question {
-			if err := s.handleQuestion(query.Question[i], &resp); err != nil {
+			resp = dns.Msg{}
+			resp.SetReply(query)
+			resp.Answer = []dns.RR{}
+			resp.Extra = []dns.RR{}
+			if err = s.handleQuestion(query.Question[i], &resp); err != nil {
 				log.Printf("[ERR] bonjour: failed to handle question %v: %v",
 					query.Question[i], err)
+				continue
+			}
+			// Check if there is an answer
+			if len(resp.Answer) > 0 {
+				//return s.sendResponse(&resp, from)
+				//log.Println("====== BEGIN ======")
+				//log.Println(resp.String())
+				//log.Println("======= END =======")
+				if e := s.multicastResponse(&resp); e != nil {
+					err = e
+				}
 			}
 		}
 	}
 
-	// Check if there is an answer
-	if len(resp.Answer) > 0 {
-		//return s.sendResponse(&resp, from)
-		log.Println("====== BEGIN ======")
-		log.Println(resp.String())
-		log.Println("======= END =======")
-		return s.multicastResponse(&resp)
-	}
-
-	return nil
+	return err
 }
 
 // handleQuestion is used to handle an incoming question
@@ -406,7 +420,7 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 		Hdr: dns.RR_Header{
 			Name:   fmt.Sprintf("_services._dns-sd._udp.%s.", trimDot(s.service.Domain)),
 			Rrtype: dns.TypePTR,
-			Class:  dns.TypeDLV,
+			Class:  dns.ClassINET,
 			Ttl:    ttl,
 		},
 		Ptr: s.service.ServiceName(),
@@ -437,6 +451,64 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 		}
 		resp.Extra = append(resp.Extra, aaaa)
 	}
+}
+
+// Perform probing & announcement
+//TODO: implement a proper probing & conflict resolution
+func (s *server) probe() {
+	q := new(dns.Msg)
+	q.SetQuestion(s.service.ServiceInstanceName(), dns.TypePTR)
+	q.RecursionDesired = false
+
+	srv := &dns.SRV{
+		Hdr: dns.RR_Header{
+			Name:   s.service.ServiceInstanceName(),
+			Rrtype: dns.TypeSRV,
+			Class:  dns.ClassINET,
+			Ttl:    3200,
+		},
+		Priority: 0,
+		Weight:   0,
+		Port:     uint16(s.service.Port),
+		Target:   s.service.HostName,
+	}
+	txt := &dns.TXT{
+		Hdr: dns.RR_Header{
+			Name:   s.service.ServiceInstanceName(),
+			Rrtype: dns.TypeTXT,
+			Class:  dns.ClassINET,
+			Ttl:    3200,
+		},
+		Txt: s.service.Text,
+	}
+	q.Ns = []dns.RR{srv, txt}
+
+	randomizer := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := 0; i < 3; i++ {
+		if err := s.multicastResponse(q); err != nil {
+			log.Println("[ERR] bonjour: failed to send probe:", err.Error())
+		}
+		time.Sleep(time.Duration(randomizer.Intn(250)) * time.Millisecond)
+	}
+
+	resp := new(dns.Msg)
+	resp.Answer = []dns.RR{}
+	resp.Extra = []dns.RR{}
+	s.composeLookupAnswers(resp, 3200)
+	for i := 0; i < 3; i++ {
+		if err := s.multicastResponse(resp); err != nil {
+			log.Println("[ERR] bonjour: failed to send announcement:", err.Error())
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+func (s *server) unregister() error {
+	resp := new(dns.Msg)
+	resp.Answer = []dns.RR{}
+	resp.Extra = []dns.RR{}
+	s.composeLookupAnswers(resp, 0)
+	return s.multicastResponse(resp)
 }
 
 // sendResponse is used to send a unicast response packet

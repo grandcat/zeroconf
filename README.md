@@ -3,7 +3,7 @@ bonjour
 
 This is a simple Multicast DNS-SD (Apple Bonjour) library written in Golang. You can use it to discover services in the LAN. Pay attention to the infrastructure you are planning to use it (clouds or shared infrastructures usually prevent mDNS from functioning). But it should work in the most office, home and private environments.
 
-It does NOT pretend to be a full & valid implementation of the RFC 6762 & RFC 6763, but it fulfils the requirements of its authors (we just needed service discovery in the LAN environment for our IoT products).
+**IMPORTANT**: It does NOT pretend to be a full & valid implementation of the RFC 6762 & RFC 6763, but it fulfils the requirements of its authors (we just needed service discovery in the LAN environment for our IoT products). The registration code needs a lot of improvements. This code was not tested for Bonjour conformance but have been manually verified to be working using built-in OSX utility `/usr/bin/dns-sd`.
 
 
 ##Browsing available services in your local network
@@ -73,4 +73,36 @@ func main() {
 
 ##Registering a service
 
-Work in progress...
+Registering a service is as simple as the following:
+
+```
+package main
+
+import (
+    "log"
+    "os"
+    "os/signal"
+    "time"
+
+    "github.com/oleksandr/bonjour"
+)
+
+func main() {
+    // Run registration (blocking call)
+    exitCh, err := bonjour.Register("Foo Service", "_foobar._tcp", "", 9999, []string{"txtv=1", "app=test"}, nil)
+    if err != nil {
+        log.Fatalln(err.Error())
+    }
+
+    // Ctrl+C handling
+    handler := make(chan os.Signal, 1)
+    signal.Notify(handler, os.Interrupt)
+    for sig := range handler {
+        if sig == os.Interrupt {
+            exitCh <- true
+            time.Sleep(1e9)
+            break
+        }
+    }
+}
+```
