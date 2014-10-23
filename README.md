@@ -15,26 +15,36 @@ package main
 
 import (
     "log"
+    "os"
+    "time"
 
     "github.com/oleksandr/bonjour"
 )
 
 func main() {
-    // Channel for results
+    resolver, err := bonjour.NewResolver(nil)
+    if err != nil {
+        log.Println("Failed to initialize resolver:", err.Error())
+        os.Exit(1)
+    }
+
     results := make(chan *bonjour.ServiceEntry)
 
-    // Results handling goroutine
-    go func(results chan *bonjour.ServiceEntry) {
+    go func(results chan *bonjour.ServiceEntry, exitCh chan<- bool) {
         for e := range results {
-            log.Printf("%#v", e)
+            log.Printf("%s", e.Instance)
+            exitCh <- true
+            time.Sleep(1e9)
+            os.Exit(0)
         }
-    }(results)
+    }(results, resolver.Exit)
 
-    // Start a browser (blocking call)
-    err := bonjour.Browse("_foobar._tcp", "", results, nil)
+    err = resolver.Browse("_foobar._tcp", "local.", results)
     if err != nil {
-        log.Println(err.Error())
+        log.Println("Failed to browse:", err.Error())
     }
+
+    select {}
 }
 ```
 
@@ -47,26 +57,36 @@ package main
 
 import (
     "log"
+    "os"
+    "time"
 
     "github.com/oleksandr/bonjour"
 )
 
 func main() {
-    // Channel for results
+    resolver, err := bonjour.NewResolver(nil)
+    if err != nil {
+        log.Println("Failed to initialize resolver:", err.Error())
+        os.Exit(1)
+    }
+
     results := make(chan *bonjour.ServiceEntry)
 
-    // Results handling goroutine
-    go func(results chan *bonjour.ServiceEntry) {
+    go func(results chan *bonjour.ServiceEntry, exitCh chan<- bool) {
         for e := range results {
-            log.Printf("%#v", e)
+            log.Printf("%s", e.Instance)
+            exitCh <- true
+            time.Sleep(1e9)
+            os.Exit(0)
         }
-    }(results)
+    }(results, resolver.Exit)
 
-    // Start a lookup (blocking call)
-    err := bonjour.Lookup("Demo", "_foobar._tcp", "", results, nil)
+    err = resolver.Lookup("DEMO", "_foobar._tcp", "", results)
     if err != nil {
-        log.Println(err.Error())
+        log.Println("Failed to browse:", err.Error())
     }
+
+    select {}
 }
 ```
 
