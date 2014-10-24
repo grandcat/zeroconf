@@ -5,6 +5,8 @@ This is a simple Multicast DNS-SD (Apple Bonjour) library written in Golang. You
 
 **IMPORTANT**: It does NOT pretend to be a full & valid implementation of the RFC 6762 & RFC 6763, but it fulfils the requirements of its authors (we just needed service discovery in the LAN environment for our IoT products). The registration code needs a lot of improvements. This code was not tested for Bonjour conformance but have been manually verified to be working using built-in OSX utility `/usr/bin/dns-sd`.
 
+Detailed documentation: [![GoDoc](https://godoc.org/github.com/oleksandr/bonjour?status.svg)](https://godoc.org/github.com/oleksandr/bonjour)
+
 
 ##Browsing available services in your local network
 
@@ -15,26 +17,36 @@ package main
 
 import (
     "log"
+    "os"
+    "time"
 
     "github.com/oleksandr/bonjour"
 )
 
 func main() {
-    // Channel for results
+    resolver, err := bonjour.NewResolver(nil)
+    if err != nil {
+        log.Println("Failed to initialize resolver:", err.Error())
+        os.Exit(1)
+    }
+
     results := make(chan *bonjour.ServiceEntry)
 
-    // Results handling goroutine
-    go func(results chan *bonjour.ServiceEntry) {
+    go func(results chan *bonjour.ServiceEntry, exitCh chan<- bool) {
         for e := range results {
-            log.Printf("%#v", e)
+            log.Printf("%s", e.Instance)
+            exitCh <- true
+            time.Sleep(1e9)
+            os.Exit(0)
         }
-    }(results)
+    }(results, resolver.Exit)
 
-    // Start a browser (blocking call)
-    err := bonjour.Browse("_foobar._tcp", "", results, nil)
+    err = resolver.Browse("_foobar._tcp", "local.", results)
     if err != nil {
-        log.Println(err.Error())
+        log.Println("Failed to browse:", err.Error())
     }
+
+    select {}
 }
 ```
 
@@ -47,26 +59,36 @@ package main
 
 import (
     "log"
+    "os"
+    "time"
 
     "github.com/oleksandr/bonjour"
 )
 
 func main() {
-    // Channel for results
+    resolver, err := bonjour.NewResolver(nil)
+    if err != nil {
+        log.Println("Failed to initialize resolver:", err.Error())
+        os.Exit(1)
+    }
+
     results := make(chan *bonjour.ServiceEntry)
 
-    // Results handling goroutine
-    go func(results chan *bonjour.ServiceEntry) {
+    go func(results chan *bonjour.ServiceEntry, exitCh chan<- bool) {
         for e := range results {
-            log.Printf("%#v", e)
+            log.Printf("%s", e.Instance)
+            exitCh <- true
+            time.Sleep(1e9)
+            os.Exit(0)
         }
-    }(results)
+    }(results, resolver.Exit)
 
-    // Start a lookup (blocking call)
-    err := bonjour.Lookup("Demo", "_foobar._tcp", "", results, nil)
+    err = resolver.Lookup("DEMO", "_foobar._tcp", "", results)
     if err != nil {
-        log.Println(err.Error())
+        log.Println("Failed to browse:", err.Error())
     }
+
+    select {}
 }
 ```
 
