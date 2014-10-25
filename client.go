@@ -13,22 +13,22 @@ import (
 )
 
 // Main client data structure to run browse/lookup queries
-type resolver struct {
+type Resolver struct {
 	c    *client
 	Exit chan<- bool
 }
 
 // Resolver structure constructor
-func NewResolver(iface *net.Interface) (*resolver, error) {
+func NewResolver(iface *net.Interface) (*Resolver, error) {
 	c, err := newClient(iface)
 	if err != nil {
 		return nil, err
 	}
-	return &resolver{c, c.closedCh}, nil
+	return &Resolver{c, c.closedCh}, nil
 }
 
 // Browse for all services of a fiven type in a given domain
-func (r *resolver) Browse(service, domain string, entries chan<- *ServiceEntry) error {
+func (r *Resolver) Browse(service, domain string, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
 	if domain != "" {
 		params.Domain = domain
@@ -47,7 +47,7 @@ func (r *resolver) Browse(service, domain string, entries chan<- *ServiceEntry) 
 }
 
 // Look up a specific service by its name and type in a given domain
-func (r *resolver) Lookup(instance, service, domain string, entries chan<- *ServiceEntry) error {
+func (r *Resolver) Lookup(instance, service, domain string, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
 	params.Instance = instance
 	if domain != "" {
