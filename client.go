@@ -316,8 +316,8 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 	if c.ipv4conn != nil {
 		c.ipv4conn.WriteTo(buf, ipv4Addr)
 	}
-	if c.ipv4conn != nil {
-		c.ipv4conn.WriteTo(buf, ipv6Addr)
+	if c.ipv6conn != nil {
+		c.ipv6conn.WriteTo(buf, ipv6Addr)
 	}
 	return nil
 }
