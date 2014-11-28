@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miekg/dns"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-	"github.com/miekg/dns"
 )
 
 var (
@@ -506,6 +506,7 @@ func (s *server) probe() {
 	}
 
 	resp := new(dns.Msg)
+	resp.MsgHdr.Response = true
 	resp.Answer = []dns.RR{}
 	resp.Extra = []dns.RR{}
 	s.composeLookupAnswers(resp, 3200)
@@ -519,6 +520,7 @@ func (s *server) probe() {
 
 func (s *server) unregister() error {
 	resp := new(dns.Msg)
+	resp.MsgHdr.Response = true
 	resp.Answer = []dns.RR{}
 	resp.Extra = []dns.RR{}
 	s.composeLookupAnswers(resp, 0)
