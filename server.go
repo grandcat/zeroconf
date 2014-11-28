@@ -406,6 +406,12 @@ func (s *server) composeBrowsingAnswers(resp *dns.Msg, ttl uint32) {
 }
 
 func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
+	// From RFC6762
+	//    The most significant bit of the rrclass for a record in the Answer
+	//    Section of a response message is the Multicast DNS cache-flush bit
+	//    and is discussed in more detail below in Section 10.2, "Announcements
+	//    to Flush Outdated Cache Entries".
+	cache_flush := uint16(1 << 15)
 	ptr := &dns.PTR{
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceName(),
@@ -419,7 +425,7 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeSRV,
-			Class:  dns.ClassINET,
+			Class:  dns.ClassINET | cache_flush,
 			Ttl:    ttl,
 		},
 		Priority: 0,
@@ -431,7 +437,7 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeTXT,
-			Class:  dns.ClassINET,
+			Class:  dns.ClassINET | cache_flush,
 			Ttl:    ttl,
 		},
 		Txt: s.service.Text,
@@ -452,7 +458,7 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
+				Class:  dns.ClassINET | cache_flush,
 				Ttl:    120,
 			},
 			A: s.service.AddrIPv4,
@@ -464,7 +470,7 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
+				Class:  dns.ClassINET | cache_flush,
 				Ttl:    120,
 			},
 			AAAA: s.service.AddrIPv6,
@@ -537,11 +543,20 @@ func (s *server) probe() {
 	resp.Answer = []dns.RR{}
 	resp.Extra = []dns.RR{}
 	s.composeLookupAnswers(resp, 3200)
+
+	// From RFC6762
+	//    The Multicast DNS responder MUST send at least two unsolicited
+	//    responses, one second apart. To provide increased robustness against
+	//    packet loss, a responder MAY send up to eight unsolicited responses,
+	//    provided that the interval between unsolicited responses increases by
+	//    at least a factor of two with every response sent.
+	timeout := 1 * time.Second
 	for i := 0; i < 3; i++ {
 		if err := s.multicastResponse(resp); err != nil {
 			log.Println("[ERR] bonjour: failed to send announcement:", err.Error())
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(timeout)
+		timeout *= 2
 	}
 }
 
