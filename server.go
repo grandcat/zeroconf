@@ -296,24 +296,28 @@ func (s *server) handleQuery(query *dns.Msg, from net.Addr) error {
 		err  error
 	)
 	if len(query.Question) > 0 {
-		for i, _ := range query.Question {
+		for _, q := range query.Question {
 			resp = dns.Msg{}
 			resp.SetReply(query)
 			resp.Answer = []dns.RR{}
 			resp.Extra = []dns.RR{}
-			if err = s.handleQuestion(query.Question[i], &resp); err != nil {
+			if err = s.handleQuestion(q, &resp); err != nil {
 				log.Printf("[ERR] bonjour: failed to handle question %v: %v",
-					query.Question[i], err)
+					q, err)
 				continue
 			}
 			// Check if there is an answer
 			if len(resp.Answer) > 0 {
-				//return s.sendResponse(&resp, from)
-				//log.Println("====== BEGIN ======")
-				//log.Println(resp.String())
-				//log.Println("======= END =======")
-				if e := s.multicastResponse(&resp); e != nil {
-					err = e
+				if isUnicastQuestion(q) {
+					// Send unicast
+					if e := s.sendResponse(&resp, from); e != nil {
+						err = e
+					}
+				} else {
+					// Send mulicast
+					if e := s.multicastResponse(&resp); e != nil {
+						err = e
+					}
 				}
 			}
 		}
@@ -333,6 +337,8 @@ func (s *server) handleQuestion(q dns.Question, resp *dns.Msg) error {
 		s.composeBrowsingAnswers(resp, 3200)
 	case s.service.ServiceInstanceName():
 		s.composeLookupAnswers(resp, 3200)
+	case s.service.ServiceTypeName():
+		s.serviceTypeName(resp, 3200)
 	}
 
 	return nil
@@ -432,7 +438,7 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 	}
 	dnssd := &dns.PTR{
 		Hdr: dns.RR_Header{
-			Name:   fmt.Sprintf("_services._dns-sd._udp.%s.", trimDot(s.service.Domain)),
+			Name:   s.service.ServiceTypeName(),
 			Rrtype: dns.TypePTR,
 			Class:  dns.ClassINET,
 			Ttl:    ttl,
@@ -465,6 +471,27 @@ func (s *server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 		}
 		resp.Extra = append(resp.Extra, aaaa)
 	}
+}
+
+func (s *server) serviceTypeName(resp *dns.Msg, ttl uint32) {
+	// From RFC6762
+	// 9.  Service Type Enumeration
+	//
+	//    For this purpose, a special meta-query is defined.  A DNS query for
+	//    PTR records with the name "_services._dns-sd._udp.<Domain>" yields a
+	//    set of PTR records, where the rdata of each PTR record is the two-
+	//    label <Service> name, plus the same domain, e.g.,
+	//    "_http._tcp.<Domain>".
+	dnssd := &dns.PTR{
+		Hdr: dns.RR_Header{
+			Name:   s.service.ServiceTypeName(),
+			Rrtype: dns.TypePTR,
+			Class:  dns.ClassINET,
+			Ttl:    ttl,
+		},
+		Ptr: s.service.ServiceName(),
+	}
+	resp.Answer = append(resp.Answer, dnssd)
 }
 
 // Perform probing & announcement
@@ -557,4 +584,14 @@ func (c *server) multicastResponse(msg *dns.Msg) error {
 		c.ipv6conn.WriteTo(buf, ipv6Addr)
 	}
 	return nil
+}
+
+func isUnicastQuestion(q dns.Question) bool {
+	// From RFC6762
+	// 18.12.  Repurposing of Top Bit of qclass in Question Section
+	//
+	//    In the Question Section of a Multicast DNS query, the top bit of the
+	//    qclass field is used to indicate that unicast responses are preferred
+	//    for this particular question.  (See Section 5.4.)
+	return q.Qclass&(1<<15) != 0
 }
