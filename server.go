@@ -43,7 +43,7 @@ var (
 
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
-func Register(instance, service, domain string, port int, text []string, iface *net.Interface) (chan<- bool, error) {
+func Register(instance, service, domain string, port int, text []string, iface *net.Interface) (*server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -97,12 +97,12 @@ func Register(instance, service, domain string, port int, text []string, iface *
 	go s.mainloop()
 	go s.probe()
 
-	return s.shutdownCh, nil
+	return s, nil
 }
 
 // Register a service proxy by given argument. This call will skip the hostname/IP lookup and
 // will use the provided values.
-func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, iface *net.Interface) (chan<- bool, error) {
+func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, iface *net.Interface) (*server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -148,7 +148,7 @@ func RegisterProxy(instance, service, domain string, port int, host, ip string, 
 	go s.mainloop()
 	go s.probe()
 
-	return s.shutdownCh, nil
+	return s, nil
 }
 
 // Server structure incapsulates both IPv4/IPv6 UDP connections
@@ -157,7 +157,6 @@ type server struct {
 	ipv4conn       *net.UDPConn
 	ipv6conn       *net.UDPConn
 	shouldShutdown bool
-	shutdownCh     chan bool
 	shutdownLock   sync.Mutex
 }
 
@@ -206,9 +205,8 @@ func newServer(iface *net.Interface) (*server, error) {
 	}
 
 	s := &server{
-		ipv4conn:   ipv4conn,
-		ipv6conn:   ipv6conn,
-		shutdownCh: make(chan bool),
+		ipv4conn: ipv4conn,
+		ipv6conn: ipv6conn,
 	}
 
 	return s, nil
@@ -222,12 +220,17 @@ func (s *server) mainloop() {
 	if s.ipv6conn != nil {
 		go s.recv(s.ipv6conn)
 	}
-	for !s.shouldShutdown {
-		select {
-		case <-s.shutdownCh:
-			s.shutdown()
-		}
-	}
+}
+
+// Shutdown closes all udp connections and unregisters the service
+func (s *server) Shutdown() {
+	s.shutdown()
+}
+
+// SetText updates and announces the TXT records
+func (s *server) SetText(text []string) {
+	s.service.Text = text
+	s.announceText()
 }
 
 // Shutdown server will close currently open connections & channel
@@ -241,7 +244,6 @@ func (s *server) shutdown() error {
 		return nil
 	}
 	s.shouldShutdown = true
-	close(s.shutdownCh)
 
 	if s.ipv4conn != nil {
 		s.ipv4conn.Close()
@@ -537,7 +539,6 @@ func (s *server) probe() {
 		}
 		time.Sleep(time.Duration(randomizer.Intn(250)) * time.Millisecond)
 	}
-
 	resp := new(dns.Msg)
 	resp.MsgHdr.Response = true
 	resp.Answer = []dns.RR{}
@@ -558,6 +559,25 @@ func (s *server) probe() {
 		time.Sleep(timeout)
 		timeout *= 2
 	}
+}
+
+// announceText sends a Text announcement with cache flush enabled
+func (s *server) announceText() {
+	resp := new(dns.Msg)
+	resp.MsgHdr.Response = true
+
+	txt := &dns.TXT{
+		Hdr: dns.RR_Header{
+			Name:   s.service.ServiceInstanceName(),
+			Rrtype: dns.TypeTXT,
+			Class:  dns.ClassINET | 1<<15,
+			Ttl:    3200,
+		},
+		Txt: s.service.Text,
+	}
+
+	resp.Answer = []dns.RR{txt}
+	s.multicastResponse(resp)
 }
 
 func (s *server) unregister() error {
