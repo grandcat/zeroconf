@@ -312,7 +312,7 @@ func (s *server) handleQuery(query *dns.Msg, from net.Addr) error {
 			if len(resp.Answer) > 0 {
 				if isUnicastQuestion(q) {
 					// Send unicast
-					if e := s.sendResponse(&resp, from); e != nil {
+					if e := s.unicastResponse(&resp, from); e != nil {
 						err = e
 					}
 				} else {
@@ -589,8 +589,8 @@ func (s *server) unregister() error {
 	return s.multicastResponse(resp)
 }
 
-// sendResponse is used to send a unicast response packet
-func (s *server) sendResponse(resp *dns.Msg, from net.Addr) error {
+// unicastResponse is used to send a unicast response packet
+func (s *server) unicastResponse(resp *dns.Msg, from net.Addr) error {
 	buf, err := resp.Pack()
 	if err != nil {
 		return err
