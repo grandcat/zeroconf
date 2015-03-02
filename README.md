@@ -111,7 +111,7 @@ import (
 
 func main() {
     // Run registration (blocking call)
-    exitCh, err := bonjour.Register("Foo Service", "_foobar._tcp", "", 9999, []string{"txtv=1", "app=test"}, nil)
+    s, err := bonjour.Register("Foo Service", "_foobar._tcp", "", 9999, []string{"txtv=1", "app=test"}, nil)
     if err != nil {
         log.Fatalln(err.Error())
     }
@@ -121,7 +121,7 @@ func main() {
     signal.Notify(handler, os.Interrupt)
     for sig := range handler {
         if sig == os.Interrupt {
-            exitCh <- true
+            s.Shutdown()
             time.Sleep(1e9)
             break
         }
@@ -146,7 +146,7 @@ import (
 
 func main() {
     // Run registration (blocking call)
-    exitCh, err := bonjour.RegisterProxy("Proxy Service", "_foobar._tcp", "", 9999, "octopus", "10.0.0.111", []string{"txtv=1", "app=test"}, nil)
+    s, err := bonjour.RegisterProxy("Proxy Service", "_foobar._tcp", "", 9999, "octopus", "10.0.0.111", []string{"txtv=1", "app=test"}, nil)
     if err != nil {
         log.Fatalln(err.Error())
     }
@@ -156,7 +156,7 @@ func main() {
     signal.Notify(handler, os.Interrupt)
     for sig := range handler {
         if sig == os.Interrupt {
-            exitCh <- true
+            s.Shutdown()
             time.Sleep(1e9)
             break
         }
