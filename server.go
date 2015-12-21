@@ -158,6 +158,7 @@ type Server struct {
 	ipv6conn       *net.UDPConn
 	shouldShutdown bool
 	shutdownLock   sync.Mutex
+	ttl            uint32
 }
 
 // Constructs server structure
@@ -207,6 +208,7 @@ func newServer(iface *net.Interface) (*Server, error) {
 	s := &Server{
 		ipv4conn: ipv4conn,
 		ipv6conn: ipv6conn,
+		ttl:      3200,
 	}
 
 	return s, nil
@@ -231,6 +233,11 @@ func (s *Server) Shutdown() {
 func (s *Server) SetText(text []string) {
 	s.service.Text = text
 	s.announceText()
+}
+
+// TTL sets the TTL for DNS replies
+func (s *Server) TTL(ttl uint32) {
+	s.ttl = ttl
 }
 
 // Shutdown server will close currently open connections & channel
@@ -336,11 +343,11 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg) error {
 
 	switch q.Name {
 	case s.service.ServiceName():
-		s.composeBrowsingAnswers(resp, 3200)
+		s.composeBrowsingAnswers(resp, s.ttl)
 	case s.service.ServiceInstanceName():
-		s.composeLookupAnswers(resp, 3200)
+		s.composeLookupAnswers(resp, s.ttl)
 	case s.service.ServiceTypeName():
-		s.serviceTypeName(resp, 3200)
+		s.serviceTypeName(resp, s.ttl)
 	}
 
 	return nil
@@ -514,7 +521,7 @@ func (s *Server) probe() {
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeSRV,
 			Class:  dns.ClassINET,
-			Ttl:    3200,
+			Ttl:    s.ttl,
 		},
 		Priority: 0,
 		Weight:   0,
@@ -526,7 +533,7 @@ func (s *Server) probe() {
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeTXT,
 			Class:  dns.ClassINET,
-			Ttl:    3200,
+			Ttl:    s.ttl,
 		},
 		Txt: s.service.Text,
 	}
@@ -543,7 +550,7 @@ func (s *Server) probe() {
 	resp.MsgHdr.Response = true
 	resp.Answer = []dns.RR{}
 	resp.Extra = []dns.RR{}
-	s.composeLookupAnswers(resp, 3200)
+	s.composeLookupAnswers(resp, s.ttl)
 
 	// From RFC6762
 	//    The Multicast DNS responder MUST send at least two unsolicited
@@ -571,7 +578,7 @@ func (s *Server) announceText() {
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeTXT,
 			Class:  dns.ClassINET | 1<<15,
-			Ttl:    3200,
+			Ttl:    s.ttl,
 		},
 		Txt: s.service.Text,
 	}
