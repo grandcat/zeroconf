@@ -27,7 +27,7 @@ func NewResolver(iface *net.Interface) (*Resolver, error) {
 	return &Resolver{c, c.closedCh}, nil
 }
 
-// Browse for all services of a fiven type in a given domain
+// Browse for all services of a given type in a given domain
 func (r *Resolver) Browse(service, domain string, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
 	if domain != "" {
