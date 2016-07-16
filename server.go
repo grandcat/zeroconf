@@ -138,7 +138,7 @@ func RegisterProxy(instance, service, domain string, port int, host, ip string, 
 	} else if ipv4 := ipAddr.To4(); ipv4 != nil {
 		entry.AddrIPv4 = ipAddr
 	} else if ipv6 := ipAddr.To16(); ipv6 != nil {
-		entry.AddrIPv4 = ipAddr
+		entry.AddrIPv6 = ipAddr
 	} else {
 		return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
 	}
