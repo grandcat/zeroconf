@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/miekg/dns"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-	"github.com/miekg/dns"
 )
 
 // Main client data structure to run browse/lookup queries
@@ -224,6 +224,10 @@ func (c *client) mainloop(params *LookupParams) {
 					continue
 				}
 				if _, ok := sentEntries[k]; ok {
+					continue
+				}
+				// Require at least one resolved IP address for ServiceEntry
+				if e.AddrIPv4 == nil && e.AddrIPv6 == nil {
 					continue
 				}
 				params.Entries <- e
