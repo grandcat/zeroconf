@@ -90,7 +90,16 @@ func Register(instance, service, domain string, port int, text []string, iface *
 			if ipnet.IP.To4() != nil {
 				entry.AddrIPv4 = ipnet.IP
 			} else if ipnet.IP.To16() != nil {
-				entry.AddrIPv6 = ipnet.IP
+				// Favor global instead of local IP scope
+				if entry.AddrIPv6 != nil {
+					if ipnet.IP.IsGlobalUnicast() {
+						entry.AddrIPv6 = ipnet.IP
+						log.Printf("Added global IPv6: %v\n", entry.AddrIPv6)
+					}
+
+				} else {
+					entry.AddrIPv6 = ipnet.IP
+				}
 			}
 		}
 	}
