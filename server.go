@@ -68,8 +68,10 @@ func Register(instance, service, domain string, port int, text []string, iface *
 			return nil, fmt.Errorf("Could not determine host")
 		}
 	}
-	entry.HostName = fmt.Sprintf("%s.", trimDot(entry.HostName))
 
+	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
+		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
+	}
 
 	// GetLocalIP returns the non loopback local IP of the host
 	iaddrs, err := net.InterfaceAddrs()
@@ -476,7 +478,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 			},
 			A: s.service.AddrIPv4,
 		}
-		resp.Extra = append(resp.Extra, a)
+		resp.Answer = append(resp.Answer, a)
 	}
 	if s.service.AddrIPv6 != nil {
 		aaaa := &dns.AAAA{
@@ -488,7 +490,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 			},
 			AAAA: s.service.AddrIPv6,
 		}
-		resp.Extra = append(resp.Extra, aaaa)
+		resp.Answer = append(resp.Answer, aaaa)
 	}
 }
 
@@ -552,6 +554,7 @@ func (s *Server) probe() {
 	}
 	resp := new(dns.Msg)
 	resp.MsgHdr.Response = true
+	// TODO: make response authoritative if we are the publisher
 	resp.Answer = []dns.RR{}
 	resp.Extra = []dns.RR{}
 	s.composeLookupAnswers(resp, s.ttl)
