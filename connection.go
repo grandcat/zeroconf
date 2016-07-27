@@ -69,17 +69,13 @@ func newConnection(iface *net.Interface) (*net.UDPConn, *net.UDPConn, error) {
 		}
 		errCount1, errCount2 := 0, 0
 		for _, iface := range ifaces {
-			if iface.Index == 23 {
-				log.Println("bind to ipv6 iface ", iface)
-
-				if err := p1.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
-					log.Println("ipv4 joingroup failed for iface ", iface)
-					errCount1++
-				}
-				if err := p2.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
-					log.Println("ipv6 joingroup failed for iface ", iface)
-					errCount2++
-				}
+			if err := p1.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
+				log.Println("ipv4 joingroup failed for iface ", iface)
+				errCount1++
+			}
+			if err := p2.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
+				log.Println("ipv6 joingroup failed for iface ", iface)
+				errCount2++
 			}
 
 		}
