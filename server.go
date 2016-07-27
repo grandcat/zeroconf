@@ -11,39 +11,11 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
-	"golang.org/x/net/ipv4"
-	"golang.org/x/net/ipv6"
 )
 
 const (
 	// Number of Multicast responses sent for a query message (default: 1 < x < 9)
 	multicastRepitions = 1
-)
-
-var (
-	// Multicast groups used by mDNS
-	mdnsGroupIPv4 = net.IPv4(224, 0, 0, 251)
-	mdnsGroupIPv6 = net.ParseIP("ff02::fb")
-
-	// mDNS wildcard addresses
-	mdnsWildcardAddrIPv4 = &net.UDPAddr{
-		IP:   net.ParseIP("224.0.0.0"),
-		Port: 5353,
-	}
-	mdnsWildcardAddrIPv6 = &net.UDPAddr{
-		IP:   net.ParseIP("ff02::"),
-		Port: 5353,
-	}
-
-	// mDNS endpoint addresses
-	ipv4Addr = &net.UDPAddr{
-		IP:   mdnsGroupIPv4,
-		Port: 5353,
-	}
-	ipv6Addr = &net.UDPAddr{
-		IP:   mdnsGroupIPv6,
-		Port: 5353,
-	}
 )
 
 // Register a service by given arguments. This call will take the system's hostname
@@ -183,46 +155,9 @@ type Server struct {
 
 // Constructs server structure
 func newServer(iface *net.Interface) (*Server, error) {
-	// Create wildcard connections (because :5353 can be already taken by other apps)
-	ipv4conn, err := net.ListenUDP("udp4", mdnsWildcardAddrIPv4)
+	ipv4conn, ipv6conn, err := newConnection(iface)
 	if err != nil {
-		log.Printf("[ERR] bonjour: Failed to bind to udp4 port: %v", err)
-	}
-	ipv6conn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
-	if err != nil {
-		log.Printf("[ERR] bonjour: Failed to bind to udp6 port: %v", err)
-	}
-	if ipv4conn == nil && ipv6conn == nil {
-		return nil, fmt.Errorf("[ERR] bonjour: Failed to bind to any udp port!")
-	}
-
-	// Join multicast groups to receive announcements
-	p1 := ipv4.NewPacketConn(ipv4conn)
-	p2 := ipv6.NewPacketConn(ipv6conn)
-	if iface != nil {
-		if err := p1.JoinGroup(iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
-			return nil, err
-		}
-		if err := p2.JoinGroup(iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
-			return nil, err
-		}
-	} else {
-		ifaces, err := net.Interfaces()
-		if err != nil {
-			return nil, err
-		}
-		errCount1, errCount2 := 0, 0
-		for _, iface := range ifaces {
-			if err := p1.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
-				errCount1++
-			}
-			if err := p2.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
-				errCount2++
-			}
-		}
-		if len(ifaces) == errCount1 && len(ifaces) == errCount2 {
-			return nil, fmt.Errorf("Failed to join multicast group on all interfaces!")
-		}
+		return nil, err
 	}
 
 	s := &Server{
