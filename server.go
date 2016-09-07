@@ -50,27 +50,22 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
 	}
 
-	// GetLocalIP returns the non loopback local IP of the host
+	// Enumerate IPs for all interfaces. For IPv6, it only takes reachable addresses.
 	iaddrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return nil, err
 	}
 
 	for _, address := range iaddrs {
-		// check the address type and if it is not a loopback the display it
 		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
-				entry.AddrIPv4 = ipnet.IP
+				entry.AddrIPv4 = append(entry.AddrIPv4, ipnet.IP)
 			} else if ipnet.IP.To16() != nil {
-				// Favor global instead of local IP scope
-				if entry.AddrIPv6 != nil {
-					if ipnet.IP.IsGlobalUnicast() {
-						entry.AddrIPv6 = ipnet.IP
-						log.Printf("Added global IPv6: %v\n", entry.AddrIPv6)
-					}
-
+				if ipnet.IP.IsGlobalUnicast() {
+					entry.AddrIPv6 = append(entry.AddrIPv6, ipnet.IP)
+					log.Printf("Added global IPv6: %v\n", ipnet.IP)
 				} else {
-					entry.AddrIPv6 = ipnet.IP
+					log.Printf("Skipped IPv6: %v\n", ipnet.IP)
 				}
 			}
 		}
@@ -94,7 +89,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 
 // Register a service proxy by given argument. This call will skip the hostname/IP lookup and
 // will use the provided values.
-func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, ifaces []net.Interface) (*Server, error) {
+func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -120,15 +115,17 @@ func RegisterProxy(instance, service, domain string, port int, host, ip string, 
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
 	}
 
-	ipAddr := net.ParseIP(ip)
-	if ipAddr == nil {
-		return nil, fmt.Errorf("Failed to parse given IP: %v", ip)
-	} else if ipv4 := ipAddr.To4(); ipv4 != nil {
-		entry.AddrIPv4 = ipAddr
-	} else if ipv6 := ipAddr.To16(); ipv6 != nil {
-		entry.AddrIPv6 = ipAddr
-	} else {
-		return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
+	for _, ip := range ips {
+		ipAddr := net.ParseIP(ip)
+		if ipAddr == nil {
+			return nil, fmt.Errorf("Failed to parse given IP: %v", ip)
+		} else if ipv4 := ipAddr.To4(); ipv4 != nil {
+			entry.AddrIPv4 = append(entry.AddrIPv4, ipAddr)
+		} else if ipv6 := ipAddr.To16(); ipv6 != nil {
+			entry.AddrIPv6 = append(entry.AddrIPv6, ipAddr)
+		} else {
+			return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
+		}
 	}
 
 	s, err := newServer(ifaces)
@@ -143,7 +140,7 @@ func RegisterProxy(instance, service, domain string, port int, host, ip string, 
 	return s, nil
 }
 
-// Server structure incapsulates both IPv4/IPv6 UDP connections
+// Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
 	service        *ServiceEntry
 	ipv4conn       *net.UDPConn
@@ -347,7 +344,7 @@ func (s *Server) composeBrowsingAnswers(resp *dns.Msg, ttl uint32) {
 	}
 	resp.Extra = append(resp.Extra, srv, txt)
 
-	if s.service.AddrIPv4 != nil {
+	for _, ipv4 := range s.service.AddrIPv4 {
 		a := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
@@ -355,11 +352,11 @@ func (s *Server) composeBrowsingAnswers(resp *dns.Msg, ttl uint32) {
 				Class:  dns.ClassINET,
 				Ttl:    ttl,
 			},
-			A: s.service.AddrIPv4,
+			A: ipv4,
 		}
 		resp.Extra = append(resp.Extra, a)
 	}
-	if s.service.AddrIPv6 != nil {
+	for _, ipv6 := range s.service.AddrIPv6 {
 		aaaa := &dns.AAAA{
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
@@ -367,7 +364,7 @@ func (s *Server) composeBrowsingAnswers(resp *dns.Msg, ttl uint32) {
 				Class:  dns.ClassINET,
 				Ttl:    ttl,
 			},
-			AAAA: s.service.AddrIPv6,
+			AAAA: ipv6,
 		}
 		resp.Extra = append(resp.Extra, aaaa)
 	}
@@ -421,7 +418,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
 
-	if s.service.AddrIPv4 != nil {
+	for _, ipv4 := range s.service.AddrIPv4 {
 		a := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
@@ -429,11 +426,11 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 				Class:  dns.ClassINET | cache_flush,
 				Ttl:    120,
 			},
-			A: s.service.AddrIPv4,
+			A: ipv4,
 		}
 		resp.Answer = append(resp.Answer, a)
 	}
-	if s.service.AddrIPv6 != nil {
+	for _, ipv6 := range s.service.AddrIPv6 {
 		aaaa := &dns.AAAA{
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
@@ -441,7 +438,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 				Class:  dns.ClassINET | cache_flush,
 				Ttl:    120,
 			},
-			AAAA: s.service.AddrIPv6,
+			AAAA: ipv6,
 		}
 		resp.Answer = append(resp.Answer, aaaa)
 	}
