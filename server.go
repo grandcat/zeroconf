@@ -20,7 +20,7 @@ const (
 
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
-func Register(instance, service, domain string, port int, text []string, iface *net.Interface) (*Server, error) {
+func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -80,7 +80,7 @@ func Register(instance, service, domain string, port int, text []string, iface *
 		return nil, fmt.Errorf("Could not determine host IP addresses")
 	}
 
-	s, err := newServer(iface)
+	s, err := newServer(ifaces)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func Register(instance, service, domain string, port int, text []string, iface *
 
 // Register a service proxy by given argument. This call will skip the hostname/IP lookup and
 // will use the provided values.
-func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, iface *net.Interface) (*Server, error) {
+func RegisterProxy(instance, service, domain string, port int, host, ip string, text []string, ifaces []net.Interface) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -131,7 +131,7 @@ func RegisterProxy(instance, service, domain string, port int, host, ip string, 
 		return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
 	}
 
-	s, err := newServer(iface)
+	s, err := newServer(ifaces)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +154,12 @@ type Server struct {
 }
 
 // Constructs server structure
-func newServer(iface *net.Interface) (*Server, error) {
-	ipv4conn, ipv6conn, err := newConnection(iface)
+func newServer(ifaces []net.Interface) (*Server, error) {
+	ipv4conn, err := joinUdp4Multicast(ifaces)
+	if err != nil {
+		return nil, err
+	}
+	ipv6conn, err := joinUdp6Multicast(ifaces)
 	if err != nil {
 		return nil, err
 	}

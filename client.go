@@ -17,8 +17,8 @@ type Resolver struct {
 }
 
 // Resolver structure constructor
-func NewResolver(iface *net.Interface) (*Resolver, error) {
-	c, err := newClient(iface)
+func NewResolver(ifaces []net.Interface) (*Resolver, error) {
+	c, err := newClient(ifaces)
 	if err != nil {
 		return nil, err
 	}
@@ -79,8 +79,12 @@ type client struct {
 }
 
 // Client structure constructor
-func newClient(iface *net.Interface) (*client, error) {
-	ipv4conn, ipv6conn, err := newConnection(iface)
+func newClient(ifaces []net.Interface) (*client, error) {
+	ipv4conn, err := joinUdp4Multicast(ifaces)
+	if err != nil {
+		return nil, err
+	}
+	ipv6conn, err := joinUdp6Multicast(ifaces)
 	if err != nil {
 		return nil, err
 	}

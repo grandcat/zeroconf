@@ -36,53 +36,68 @@ var (
 	}
 )
 
-func newConnection(iface *net.Interface) (*net.UDPConn, *net.UDPConn, error) {
-	// Create wildcard connections (because :5353 can be already taken by other apps)
-	// This is also useful as it allows to run a server and client instance simultaneously
-	ipv4conn, err := net.ListenUDP("udp4", mdnsWildcardAddrIPv4)
+func joinUdp6Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
+	udpConn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
 	if err != nil {
-		log.Printf("[ERR] bonjour: Failed to bind to udp4 port: %v", err)
-	}
-	ipv6conn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
-	if err != nil {
-		log.Printf("[ERR] bonjour: Failed to bind to udp6 port: %v", err)
-	}
-	if ipv4conn == nil && ipv6conn == nil {
-		return nil, nil, fmt.Errorf("[ERR] bonjour: Failed to bind to any udp port!")
+		log.Printf("[ERR] bonjour: Failed to bind to udp6 mutlicast: %v", err)
+		return nil, err
 	}
 
 	// Join multicast groups to receive announcements
-	p1 := ipv4.NewPacketConn(ipv4conn)
-	p2 := ipv6.NewPacketConn(ipv6conn)
-	if iface != nil {
-		if err := p1.JoinGroup(iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
-			return nil, nil, err
-		}
-		if err := p2.JoinGroup(iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
-			return nil, nil, err
-		}
-	} else {
-		ifaces, err := net.Interfaces()
-		log.Println(">> All interfaces: ", ifaces)
-		if err != nil {
-			return nil, nil, err
-		}
-		errCount1, errCount2 := 0, 0
-		for _, iface := range ifaces {
-			if err := p1.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
-				log.Println("ipv4 joingroup failed for iface ", iface)
-				errCount1++
-			}
-			if err := p2.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
-				log.Println("ipv6 joingroup failed for iface ", iface)
-				errCount2++
-			}
+	pkConn := ipv6.NewPacketConn(udpConn)
 
+	if len(interfaces) == 0 {
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			return nil, err
 		}
-		if len(ifaces) == errCount1 && len(ifaces) == errCount2 {
-			return nil, nil, fmt.Errorf("Failed to join multicast group on all interfaces!")
-		}
+		interfaces = append(interfaces, ifaces...)
+		log.Println("Used interfaces: ", interfaces)
 	}
 
-	return ipv4conn, ipv6conn, nil
+	var failedJoins int
+	for _, iface := range interfaces {
+		if err := pkConn.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
+			log.Println("Udp6 JoinGroup failed for iface ", iface)
+			failedJoins++
+		}
+	}
+	if failedJoins == len(interfaces) {
+		return nil, fmt.Errorf("udp6: failed to join any of these interfaces: %v", interfaces)
+	}
+
+	return udpConn, nil
+}
+
+func joinUdp4Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
+	udpConn, err := net.ListenUDP("udp4", mdnsWildcardAddrIPv4)
+	if err != nil {
+		log.Printf("[ERR] bonjour: Failed to bind to udp4 mutlicast: %v", err)
+		return nil, err
+	}
+
+	// Join multicast groups to receive announcements
+	pkConn := ipv4.NewPacketConn(udpConn)
+
+	if len(interfaces) == 0 {
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			return nil, err
+		}
+		interfaces = append(interfaces, ifaces...)
+		log.Println("Used interfaces: ", interfaces)
+	}
+
+	var failedJoins int
+	for _, iface := range interfaces {
+		if err := pkConn.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
+			log.Println("Udp4 JoinGroup failed for iface ", iface)
+			failedJoins++
+		}
+	}
+	if failedJoins == len(interfaces) {
+		return nil, fmt.Errorf("udp4: failed to join any of these interfaces: %v", interfaces)
+	}
+
+	return udpConn, nil
 }
