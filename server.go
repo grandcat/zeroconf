@@ -50,12 +50,22 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
 	}
 
-	// Enumerate IPs for all interfaces. For IPv6, it only takes reachable addresses.
-	iaddrs, err := net.InterfaceAddrs()
-	if err != nil {
-		return nil, err
+	// Enumerate IPs for all interfaces given. If nil, take all available local interfaces.
+	var iaddrs []net.Addr
+	for _, ifi := range ifaces {
+		addr, err := ifi.Addrs()
+		if err != nil {
+			continue
+		}
+		iaddrs = append(iaddrs, addr...)
 	}
-
+	if len(iaddrs) == 0 {
+		iaddrs, err = net.InterfaceAddrs()
+		if err != nil {
+			return nil, err
+		}
+	}
+	// For IPv6, only choose reachable addresses.
 	for _, address := range iaddrs {
 		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
