@@ -167,13 +167,13 @@ func (c *client) mainloop(params *LookupParams) {
 					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
 				case *dns.A:
 					for k, e := range entries {
-						if e.HostName == rr.Hdr.Name && entries[k].AddrIPv4 == nil {
+						if e.HostName == rr.Hdr.Name {
 							entries[k].AddrIPv4 = append(entries[k].AddrIPv4, rr.A)
 						}
 					}
 				case *dns.AAAA:
 					for k, e := range entries {
-						if e.HostName == rr.Hdr.Name && entries[k].AddrIPv6 == nil {
+						if e.HostName == rr.Hdr.Name {
 							entries[k].AddrIPv6 = append(entries[k].AddrIPv6, rr.AAAA)
 						}
 					}
@@ -192,7 +192,8 @@ func (c *client) mainloop(params *LookupParams) {
 					continue
 				}
 				// Require at least one resolved IP address for ServiceEntry
-				if e.AddrIPv4 == nil && e.AddrIPv6 == nil {
+				// TODO: wait some more time as chances are high both will arrive.
+				if len(e.AddrIPv4) == 0 && len(e.AddrIPv6) == 0 {
 					continue
 				}
 				params.Entries <- e
