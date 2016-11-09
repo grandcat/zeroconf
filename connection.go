@@ -47,13 +47,9 @@ func joinUdp6Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
 	pkConn := ipv6.NewPacketConn(udpConn)
 
 	if len(interfaces) == 0 {
-		ifaces, err := net.Interfaces()
-		if err != nil {
-			return nil, err
-		}
-		interfaces = append(interfaces, ifaces...)
-		log.Println("Used interfaces: ", interfaces)
+		interfaces = listMulticastInterfaces()
 	}
+	log.Println("Using multicast interfaces: ", interfaces)
 
 	var failedJoins int
 	for _, iface := range interfaces {
@@ -63,6 +59,7 @@ func joinUdp6Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
 		}
 	}
 	if failedJoins == len(interfaces) {
+		pkConn.Close()
 		return nil, fmt.Errorf("udp6: failed to join any of these interfaces: %v", interfaces)
 	}
 
@@ -80,13 +77,9 @@ func joinUdp4Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
 	pkConn := ipv4.NewPacketConn(udpConn)
 
 	if len(interfaces) == 0 {
-		ifaces, err := net.Interfaces()
-		if err != nil {
-			return nil, err
-		}
-		interfaces = append(interfaces, ifaces...)
-		log.Println("Used interfaces: ", interfaces)
+		interfaces = listMulticastInterfaces()
 	}
+	log.Println("Using multicast interfaces: ", interfaces)
 
 	var failedJoins int
 	for _, iface := range interfaces {
@@ -96,8 +89,24 @@ func joinUdp4Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
 		}
 	}
 	if failedJoins == len(interfaces) {
+		pkConn.Close()
 		return nil, fmt.Errorf("udp4: failed to join any of these interfaces: %v", interfaces)
 	}
 
 	return udpConn, nil
+}
+
+func listMulticastInterfaces() []net.Interface {
+	var interfaces []net.Interface
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return nil
+	}
+	for _, ifi := range ifaces {
+		if (ifi.Flags & net.FlagMulticast) > 0 {
+			interfaces = append(interfaces, ifi)
+		}
+	}
+
+	return interfaces
 }
