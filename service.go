@@ -17,8 +17,8 @@ type ServiceRecord struct {
 	serviceTypeName     string `json:"-"`
 }
 
-// Returns complete service name (e.g. _foobar._tcp.local.), which is composed
-// from a service name (also referred as service type) and a domain.
+// ServiceName returns a complete service name (e.g. _foobar._tcp.local.), which is composed
+// of a service name (also referred as service type) and a domain.
 func (s *ServiceRecord) ServiceName() string {
 	if s.serviceName == "" {
 		s.serviceName = fmt.Sprintf("%s.%s.", trimDot(s.Service), trimDot(s.Domain))
@@ -26,7 +26,7 @@ func (s *ServiceRecord) ServiceName() string {
 	return s.serviceName
 }
 
-// Returns complete service instance name (e.g. MyDemo\ Service._foobar._tcp.local.),
+// ServiceInstanceName returns a complete service instance name (e.g. MyDemo\ Service._foobar._tcp.local.),
 // which is composed from service instance name, service name and a domain.
 func (s *ServiceRecord) ServiceInstanceName() string {
 	// If no instance name provided we cannot compose service instance name
@@ -52,7 +52,7 @@ func (s *ServiceRecord) ServiceTypeName() string {
 	return s.serviceTypeName
 }
 
-// Constructs a ServiceRecord structure by given arguments
+// NewServiceRecord constructs a ServiceRecord.
 func NewServiceRecord(instance, service, domain string) *ServiceRecord {
 	return &ServiceRecord{instance, service, domain, "", "", ""}
 }
@@ -63,7 +63,7 @@ type LookupParams struct {
 	Entries chan<- *ServiceEntry // Entries Channel
 }
 
-// Constructs a LookupParams structure by given arguments
+// NewLookupParams constructs a LookupParams.
 func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *LookupParams {
 	return &LookupParams{
 		*NewServiceRecord(instance, service, domain),
@@ -84,15 +84,9 @@ type ServiceEntry struct {
 	AddrIPv6 []net.IP `json:"-"`        // Host machine IPv6 address
 }
 
-// Constructs a ServiceEntry structure by given arguments
+// NewServiceEntry constructs a ServiceEntry.
 func NewServiceEntry(instance, service, domain string) *ServiceEntry {
 	return &ServiceEntry{
-		*NewServiceRecord(instance, service, domain),
-		"",
-		0,
-		[]string{},
-		0,
-		[]net.IP{},
-		[]net.IP{},
+		ServiceRecord: *NewServiceRecord(instance, service, domain),
 	}
 }
