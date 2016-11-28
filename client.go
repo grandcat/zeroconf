@@ -1,11 +1,11 @@
 package bonjour
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net"
 	"strings"
-	"sync"
 
 	"github.com/miekg/dns"
 )
@@ -42,14 +42,14 @@ func SelectIPTraffic(t IPType) ClientOption {
 	}
 }
 
-// Main client data structure to run browse/lookup queries
+// Resolver acts as entry point for service lookups and to browse the DNS-SD.
 type Resolver struct {
 	c    *client
 	opts clientOpts
-	Exit chan<- bool
 }
 
-// Resolver structure constructor
+// NewResolver creates a new resolver and joins the UDP multicast groups to
+// listen for mDNS messages.
 func NewResolver(options ...ClientOption) (*Resolver, error) {
 	// Apply default configuration and load supplied options.
 	var conf = clientOpts{
@@ -68,31 +68,31 @@ func NewResolver(options ...ClientOption) (*Resolver, error) {
 	return &Resolver{
 		c:    c,
 		opts: conf,
-		Exit: c.closedCh,
 	}, nil
 }
 
-// Browse for all services of a given type in a given domain
-func (r *Resolver) Browse(service, domain string, entries chan<- *ServiceEntry) error {
+// Browse for all services of a given type in a given domain.
+func (r *Resolver) Browse(ctx context.Context, service, domain string, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
 	if domain != "" {
 		params.Domain = domain
 	}
 	params.Entries = entries
 
-	go r.c.mainloop(params)
+	go r.c.mainloop(ctx, params)
 
 	err := r.c.query(params)
 	if err != nil {
-		r.Exit <- true
+		_, cancel := context.WithCancel(ctx)
+		cancel()
 		return err
 	}
 
 	return nil
 }
 
-// Look up a specific service by its name and type in a given domain
-func (r *Resolver) Lookup(instance, service, domain string, entries chan<- *ServiceEntry) error {
+// Lookup a specific service by its name and type in a given domain.
+func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
 	params.Instance = instance
 	if domain != "" {
@@ -100,37 +100,35 @@ func (r *Resolver) Lookup(instance, service, domain string, entries chan<- *Serv
 	}
 	params.Entries = entries
 
-	go r.c.mainloop(params)
+	go r.c.mainloop(ctx, params)
 
 	err := r.c.query(params)
 	if err != nil {
-		r.Exit <- true
+		_, cancel := context.WithCancel(ctx)
+		cancel()
 		return err
 	}
 
 	return nil
 }
 
-// defaultParams is used to return a default set of QueryParam's
+// defaultParams returns a default set of QueryParams.
 func defaultParams(service string) *LookupParams {
 	return NewLookupParams("", service, "local", make(chan *ServiceEntry))
 }
 
-// Client structure incapsulates both IPv4/IPv6 UDP connections
+// Client structure encapsulates both IPv4/IPv6 UDP connections.
 type client struct {
-	ipv4conn  *net.UDPConn
-	ipv6conn  *net.UDPConn
-	closed    bool
-	closedCh  chan bool
-	closeLock sync.Mutex
+	ipv4conn *net.UDPConn
+	ipv6conn *net.UDPConn
 }
 
 // Client structure constructor
 func newClient(opts clientOpts) (*client, error) {
-	var err error
 	// IPv4 interfaces
 	var ipv4conn *net.UDPConn
 	if (opts.listenOn & IPv4) > 0 {
+		var err error
 		ipv4conn, err = joinUdp4Multicast(opts.ifaces)
 		if err != nil {
 			return nil, err
@@ -139,39 +137,40 @@ func newClient(opts clientOpts) (*client, error) {
 	// IPv6 interfaces
 	var ipv6conn *net.UDPConn
 	if (opts.listenOn & IPv6) > 0 {
+		var err error
 		ipv6conn, err = joinUdp6Multicast(opts.ifaces)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	c := &client{
+	return &client{
 		ipv4conn: ipv4conn,
 		ipv6conn: ipv6conn,
-		closedCh: make(chan bool),
-	}
-
-	return c, nil
+	}, nil
 }
 
 // Start listeners and waits for the shutdown signal from exit channel
-func (c *client) mainloop(params *LookupParams) {
+func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 	// start listening for responses
 	msgCh := make(chan *dns.Msg, 32)
 	if c.ipv4conn != nil {
-		go c.recv(c.ipv4conn, msgCh)
+		go c.recv(ctx, c.ipv4conn, msgCh)
 	}
 	if c.ipv6conn != nil {
-		go c.recv(c.ipv6conn, msgCh)
+		go c.recv(ctx, c.ipv6conn, msgCh)
 	}
 
 	// Iterate through channels from listeners goroutines
 	var entries, sentEntries map[string]*ServiceEntry
 	sentEntries = make(map[string]*ServiceEntry)
-	for !c.closed {
+	for {
 		select {
-		case <-c.closedCh:
+		case <-ctx.Done():
+			// Context expired. Notify subscriber that we are done here.
+			params.done()
 			c.shutdown()
+			return
 		case msg := <-msgCh:
 			entries = make(map[string]*ServiceEntry)
 			sections := append(msg.Answer, msg.Ns...)
@@ -261,17 +260,8 @@ func (c *client) mainloop(params *LookupParams) {
 	}
 }
 
-// Shutdown client will close currently open connections & channel
+// Shutdown client will close currently open connections and channel implicitly.
 func (c *client) shutdown() {
-	c.closeLock.Lock()
-	defer c.closeLock.Unlock()
-
-	if c.closed {
-		return
-	}
-	c.closed = true
-	close(c.closedCh)
-
 	if c.ipv4conn != nil {
 		c.ipv4conn.Close()
 	}
@@ -282,12 +272,16 @@ func (c *client) shutdown() {
 
 // Data receiving routine reads from connection, unpacks packets into dns.Msg
 // structures and sends them to a given msgCh channel
-func (c *client) recv(l *net.UDPConn, msgCh chan *dns.Msg) {
+func (c *client) recv(ctx context.Context, l *net.UDPConn, msgCh chan *dns.Msg) {
 	if l == nil {
 		return
 	}
 	buf := make([]byte, 65536)
-	for !c.closed {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
 		n, _, err := l.ReadFrom(buf)
 		if err != nil {
 			continue
@@ -299,7 +293,9 @@ func (c *client) recv(l *net.UDPConn, msgCh chan *dns.Msg) {
 		}
 		select {
 		case msgCh <- msg:
-		case <-c.closedCh:
+			// Submit decoded DNS message and continue.
+		case <-ctx.Done():
+			// Abort.
 			return
 		}
 	}

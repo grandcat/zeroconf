@@ -71,6 +71,12 @@ func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEn
 	}
 }
 
+// Notify subscriber that no more entries will arrive. Mostly caused
+// by an expired context.
+func (l *LookupParams) done() {
+	close(l.Entries)
+}
+
 // ServiceEntry represents a browse/lookup result for client API.
 // It is also used to configure service registration (server API), which is
 // used to answer multicast queries.
