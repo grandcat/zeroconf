@@ -15,7 +15,7 @@ import (
 
 const (
 	// Number of Multicast responses sent for a query message (default: 1 < x < 9)
-	multicastRepitions = 1
+	multicastRepitions = 2
 )
 
 // Register a service by given arguments. This call will take the system's hostname
@@ -266,13 +266,10 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 	}
 
 	// Handle each question
-	var (
-		resp dns.Msg
-		err  error
-	)
+	var err error
 	if len(query.Question) > 0 {
 		for _, q := range query.Question {
-			resp = dns.Msg{}
+			resp := dns.Msg{}
 			resp.SetReply(query)
 			resp.Answer = []dns.RR{}
 			resp.Extra = []dns.RR{}
@@ -506,6 +503,7 @@ func (s *Server) probe() {
 	q.Ns = []dns.RR{srv, txt}
 
 	randomizer := rand.New(rand.NewSource(time.Now().UnixNano()))
+
 	for i := 0; i < multicastRepitions; i++ {
 		if err := s.multicastResponse(q); err != nil {
 			log.Println("[ERR] bonjour: failed to send probe:", err.Error())

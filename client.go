@@ -10,19 +10,66 @@ import (
 	"github.com/miekg/dns"
 )
 
+// IPType specifies the IP traffic the client listens for.
+// This does not guarantee that only mDNS entries of this sepcific
+// type passes. E.g. typical mDNS packets distributed via IPv4, often contain
+// both DNS A and AAAA entries.
+type IPType uint8
+
+// Options for IPType.
+const (
+	IPv4        = 0x01
+	IPv6        = 0x02
+	IPv4AndIPv6 = (IPv4 | IPv6) //< Default option.
+)
+
+type clientOpts struct {
+	listenOn IPType
+	ifaces   []net.Interface
+}
+
+// ClientOption fills the option struct to configure intefaces, etc.
+type ClientOption func(*clientOpts)
+
+// SelectIPTraffic selects the type of IP packets (IPv4, IPv6, or both) this
+// instance listens for.
+// This does not guarantee that only mDNS entries of this sepcific
+// type passes. E.g. typical mDNS packets distributed via IPv4, often contain
+// both DNS A and AAAA entries.
+func SelectIPTraffic(t IPType) ClientOption {
+	return func(o *clientOpts) {
+		o.listenOn = t
+	}
+}
+
 // Main client data structure to run browse/lookup queries
 type Resolver struct {
 	c    *client
+	opts clientOpts
 	Exit chan<- bool
 }
 
 // Resolver structure constructor
-func NewResolver(ifaces []net.Interface) (*Resolver, error) {
-	c, err := newClient(ifaces)
+func NewResolver(options ...ClientOption) (*Resolver, error) {
+	// Apply default configuration and load supplied options.
+	var conf = clientOpts{
+		listenOn: IPv4AndIPv6,
+	}
+	for _, o := range options {
+		if o != nil {
+			o(&conf)
+		}
+	}
+
+	c, err := newClient(conf)
 	if err != nil {
 		return nil, err
 	}
-	return &Resolver{c, c.closedCh}, nil
+	return &Resolver{
+		c:    c,
+		opts: conf,
+		Exit: c.closedCh,
+	}, nil
 }
 
 // Browse for all services of a given type in a given domain
@@ -79,14 +126,23 @@ type client struct {
 }
 
 // Client structure constructor
-func newClient(ifaces []net.Interface) (*client, error) {
-	ipv4conn, err := joinUdp4Multicast(ifaces)
-	if err != nil {
-		return nil, err
+func newClient(opts clientOpts) (*client, error) {
+	var err error
+	// IPv4 interfaces
+	var ipv4conn *net.UDPConn
+	if (opts.listenOn & IPv4) > 0 {
+		ipv4conn, err = joinUdp4Multicast(opts.ifaces)
+		if err != nil {
+			return nil, err
+		}
 	}
-	ipv6conn, err := joinUdp6Multicast(ifaces)
-	if err != nil {
-		return nil, err
+	// IPv6 interfaces
+	var ipv6conn *net.UDPConn
+	if (opts.listenOn & IPv6) > 0 {
+		ipv6conn, err = joinUdp6Multicast(opts.ifaces)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	c := &client{
