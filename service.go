@@ -3,6 +3,7 @@ package bonjour
 import (
 	"fmt"
 	"net"
+	"sync"
 )
 
 // ServiceRecord contains the basic description of a service, which contains instance name, service type & domain
@@ -61,13 +62,18 @@ func NewServiceRecord(instance, service, domain string) *ServiceRecord {
 type LookupParams struct {
 	ServiceRecord
 	Entries chan<- *ServiceEntry // Entries Channel
+
+	stopProbing chan struct{}
+	once        sync.Once
 }
 
 // NewLookupParams constructs a LookupParams.
 func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *LookupParams {
 	return &LookupParams{
-		*NewServiceRecord(instance, service, domain),
-		entries,
+		ServiceRecord: *NewServiceRecord(instance, service, domain),
+		Entries:       entries,
+
+		stopProbing: make(chan struct{}),
 	}
 }
 
@@ -75,6 +81,10 @@ func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEn
 // by an expired context.
 func (l *LookupParams) done() {
 	close(l.Entries)
+}
+
+func (l *LookupParams) disableProbing() {
+	l.once.Do(func() { close(l.stopProbing) })
 }
 
 // ServiceEntry represents a browse/lookup result for client API.

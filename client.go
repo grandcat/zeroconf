@@ -7,6 +7,9 @@ import (
 	"net"
 	"strings"
 
+	"time"
+
+	"github.com/cenkalti/backoff"
 	"github.com/miekg/dns"
 )
 
@@ -87,6 +90,9 @@ func (r *Resolver) Browse(ctx context.Context, service, domain string, entries c
 		cancel()
 		return err
 	}
+	// If previous probe was ok, it should be fine now. In case of an error later on,
+	// the entries' queue is closed.
+	go r.c.periodicQuery(ctx, params)
 
 	return nil
 }
@@ -104,10 +110,14 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 
 	err := r.c.query(params)
 	if err != nil {
+		// XXX: replace cancel with own chan for abort on error
 		_, cancel := context.WithCancel(ctx)
 		cancel()
 		return err
 	}
+	// If previous probe was ok, it should be fine now. In case of an error later on,
+	// the entries' queue is closed.
+	go r.c.periodicQuery(ctx, params)
 
 	return nil
 }
@@ -251,8 +261,12 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 				if len(e.AddrIPv4) == 0 && len(e.AddrIPv6) == 0 {
 					continue
 				}
+				// Submit entry to subscriber and cache it.
+				// This is also a point to possibly stop probing actively for a
+				// service entry.
 				params.Entries <- e
 				sentEntries[k] = e
+				params.disableProbing()
 			}
 			// reset entries
 			entries = make(map[string]*ServiceEntry)
@@ -277,18 +291,24 @@ func (c *client) recv(ctx context.Context, l *net.UDPConn, msgCh chan *dns.Msg) 
 		return
 	}
 	buf := make([]byte, 65536)
+	var fatalErr error
 	for {
-		if ctx.Err() != nil {
+		// Handles the following cases:
+		// - ReadFrom aborts with error due to closed UDP connection -> causes ctx cancel
+		// - ReadFrom aborts otherwise.
+		// TODO: the context check can be removed. Verify!
+		if ctx.Err() != nil || fatalErr != nil {
 			return
 		}
 
 		n, _, err := l.ReadFrom(buf)
 		if err != nil {
+			fatalErr = err
 			continue
 		}
 		msg := new(dns.Msg)
 		if err := msg.Unpack(buf[:n]); err != nil {
-			log.Printf("[ERR] mdns: Failed to unpack packet: %v", err)
+			log.Printf("[WARN] mdns: Failed to unpack packet: %v", err)
 			continue
 		}
 		select {
@@ -299,6 +319,51 @@ func (c *client) recv(ctx context.Context, l *net.UDPConn, msgCh chan *dns.Msg) 
 			return
 		}
 	}
+}
+
+// periodicQuery sens multiple probes until a valid response is received by
+// the main processing loop or some timeout/cancel fires.
+// TODO: move error reporting to shutdown function as periodicQuery is called from
+// go routine context.
+func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error {
+	if params.stopProbing == nil {
+		return nil
+	}
+
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 4 * time.Second
+	bo.MaxInterval = 60 * time.Second
+	bo.Reset()
+
+	for {
+		// Do periodic query.
+		log.Println(">>> Doing periodic query..")
+		if err := c.query(params); err != nil {
+			// XXX: use own error handling instead of misuse of context
+			_, cancel := context.WithCancel(ctx)
+			cancel()
+			return err
+		}
+
+		// Backoff and cancel logic.
+		wait := bo.NextBackOff()
+		if wait == backoff.Stop {
+			log.Println("periodicQuery: abort due to timeout")
+			return nil
+		}
+		select {
+		case <-time.After(wait):
+			// Wait for next iteration.
+		case <-params.stopProbing:
+			// Chan is closed (or happened in the past).
+			// Done here. Received a matching mDNS entry.
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+
+		}
+	}
+
 }
 
 // Performs the actual query by service name (browse) or service instance name (lookup),
