@@ -6,11 +6,11 @@ import (
 	"log"
 	"time"
 
-	"github.com/grandcat/zeroconf.sd"
+	"github.com/grandcat/zeroconf"
 )
 
 var (
-	service  = flag.String("service", "_workstation._tcp", "Set the service category to look for devices..")
+	service  = flag.String("service", "_workstation._tcp", "Set the service category to look for devices.")
 	domain   = flag.String("domain", "local.", "Set the search domain. For local networks, default is fine.")
 	waitTime = flag.Int("wait", 10, "Duration in [s] to run discovery.")
 )
@@ -19,14 +19,14 @@ func main() {
 	flag.Parse()
 
 	// Discover all services on the network (e.g. _workstation._tcp)
-	resolver, err := bonjour.NewResolver(nil)
+	resolver, err := zeroconf.NewResolver(nil)
 	if err != nil {
 		log.Fatalln("Failed to initialize resolver:", err.Error())
 	}
 
-	entries := make(chan *bonjour.ServiceEntry)
+	entries := make(chan *zeroconf.ServiceEntry)
 
-	go func(results chan *bonjour.ServiceEntry) {
+	go func(results chan *zeroconf.ServiceEntry) {
 	queryloop:
 		for {
 			select {
