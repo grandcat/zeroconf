@@ -150,6 +150,10 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	return s, nil
 }
 
+const (
+	qClassCacheFlush uint16 = 1 << 15
+)
+
 // Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
 	service        *ServiceEntry
@@ -383,7 +387,6 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 	//    Section of a response message is the Multicast DNS cache-flush bit
 	//    and is discussed in more detail below in Section 10.2, "Announcements
 	//    to Flush Outdated Cache Entries".
-	cache_flush := uint16(1 << 15)
 	ptr := &dns.PTR{
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceName(),
@@ -397,7 +400,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeSRV,
-			Class:  dns.ClassINET | cache_flush,
+			Class:  dns.ClassINET | qClassCacheFlush,
 			Ttl:    ttl,
 		},
 		Priority: 0,
@@ -409,7 +412,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeTXT,
-			Class:  dns.ClassINET | cache_flush,
+			Class:  dns.ClassINET | qClassCacheFlush,
 			Ttl:    ttl,
 		},
 		Txt: s.service.Text,
@@ -430,8 +433,8 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET | cache_flush,
-				Ttl:    120,
+				Class:  dns.ClassINET | qClassCacheFlush,
+				Ttl:    ttl,
 			},
 			A: ipv4,
 		}
@@ -442,8 +445,8 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET | cache_flush,
-				Ttl:    120,
+				Class:  dns.ClassINET | qClassCacheFlush,
+				Ttl:    ttl,
 			},
 			AAAA: ipv6,
 		}
@@ -542,7 +545,7 @@ func (s *Server) announceText() {
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceInstanceName(),
 			Rrtype: dns.TypeTXT,
-			Class:  dns.ClassINET | 1<<15,
+			Class:  dns.ClassINET | qClassCacheFlush,
 			Ttl:    s.ttl,
 		},
 		Txt: s.service.Text,
@@ -600,5 +603,5 @@ func isUnicastQuestion(q dns.Question) bool {
 	//    In the Question Section of a Multicast DNS query, the top bit of the
 	//    qclass field is used to indicate that unicast responses are preferred
 	//    for this particular question.  (See Section 5.4.)
-	return q.Qclass&(1<<15) != 0
+	return q.Qclass&qClassCacheFlush != 0
 }
