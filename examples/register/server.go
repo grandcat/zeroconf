@@ -16,7 +16,7 @@ var (
 	name     = flag.String("name", "GoZeroconfGo", "The name for the service.")
 	service  = flag.String("service", "_flexsmc._tcp", "Set the service type of the new service.")
 	domain   = flag.String("domain", "local.", "Set the network domain. Default should be fine.")
-	port     = flag.Int("Port", 42424, "Set the service port.")
+	port     = flag.Int("port", 42424, "Set the port the service is listening to.")
 	waitTime = flag.Int("wait", 10, "Duration in [s] to publish service for.")
 )
 
