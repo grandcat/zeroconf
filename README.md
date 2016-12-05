@@ -13,7 +13,7 @@ It basically implements aspects of the standards
 Though it does not support all requirements yet, the aim is to provide a complient solution in the long-term with the community.
 
 By now, it should be compatible to [Avahi](http://avahi.org/) (tested) and Apple's Bonjour (untested).
-ould work in the most office, home and private environments.
+Target environments: private LAN/Wifi, small or isolated networks.
 
 [![GoDoc](https://godoc.org/github.com/grandcat/zeroconf?status.svg)](https://godoc.org/github.com/grandcat/zeroconf)
 
