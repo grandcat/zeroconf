@@ -26,7 +26,7 @@ func main() {
 
 	entries := make(chan *zeroconf.ServiceEntry)
 
-	go func(results chan *zeroconf.ServiceEntry) {
+	go func(results <-chan *zeroconf.ServiceEntry) {
 	queryloop:
 		for {
 			select {
