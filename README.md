@@ -17,6 +17,13 @@ Target environments: private LAN/Wifi, small or isolated networks.
 
 [![GoDoc](https://godoc.org/github.com/grandcat/zeroconf?status.svg)](https://godoc.org/github.com/grandcat/zeroconf)
 
+## Install
+Nothing is as easy as that:
+```bash
+$ go get -u github.com/grandcat/zeroconf
+```
+This package requires Go 1.6 or later.
+
 ## Browse for services in your local network
 
 ```go
