@@ -18,37 +18,35 @@ ould work in the most office, home and private environments.
 ## Browse for services in your local network
 
 ```go
-func main() {
-	// Discover all services on the network (e.g. _workstation._tcp)
-	resolver, err := zeroconf.NewResolver(nil)
-	if err != nil {
-		log.Fatalln("Failed to initialize resolver:", err.Error())
-	}
-
-	entries := make(chan *zeroconf.ServiceEntry)
-	go func(results <-chan *zeroconf.ServiceEntry) {
-	queryloop:
-		for {
-			select {
-			case entry, more := <-results:
-				if !more {
-					break queryloop
-				}
-				log.Println(entry)
-			}
-		}
-
-	}(entries)
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
-	defer cancel()
-	err = resolver.Browse(ctx, "_workstation._tcp", "local", entries)
-	if err != nil {
-		log.Fatalln("Failed to browse:", err.Error())
-	}
-
-	<-ctx.Done()
+// Discover all services on the network (e.g. _workstation._tcp)
+resolver, err := zeroconf.NewResolver(nil)
+if err != nil {
+    log.Fatalln("Failed to initialize resolver:", err.Error())
 }
+
+entries := make(chan *zeroconf.ServiceEntry)
+go func(results <-chan *zeroconf.ServiceEntry) {
+queryloop:
+    for {
+        select {
+        case entry, more := <-results:
+            if !more {
+                break queryloop
+            }
+            log.Println(entry)
+        }
+    }
+
+}(entries)
+
+ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+defer cancel()
+err = resolver.Browse(ctx, "_workstation._tcp", "local", entries)
+if err != nil {
+    log.Fatalln("Failed to browse:", err.Error())
+}
+
+<-ctx.Done()
 ```
 See https://github.com/grandcat/zeroconf/blob/master/examples/resolv/client.go.
 
@@ -61,25 +59,23 @@ See https://github.com/grandcat/zeroconf/blob/master/examples/resolv/client.go.
 ## Register a service
 
 ```go
-func main() {
-	server, err := zeroconf.Register("GoZeroconf", "_workstation._tcp", "local", 42424, []string{"txtv=0", "lo=1", "la=2"}, nil)
-	if err != nil {
-		panic(err)
-	}
-	defer server.Shutdown()
-
-	// Clean exit.
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	select {
-	case <-sig:
-		// Exit by user
-	case <-time.After(time.Second * 120):
-		// Exit by timeout
-	}
-
-	log.Println("Shutting down.")
+server, err := zeroconf.Register("GoZeroconf", "_workstation._tcp", "local", 42424, []string{"txtv=0", "lo=1", "la=2"}, nil)
+if err != nil {
+    panic(err)
 }
+defer server.Shutdown()
+
+// Clean exit.
+sig := make(chan os.Signal, 1)
+signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+select {
+case <-sig:
+    // Exit by user
+case <-time.After(time.Second * 120):
+    // Exit by timeout
+}
+
+log.Println("Shutting down.")
 ```
 See https://github.com/grandcat/zeroconf/blob/master/examples/register/server.go.
 
