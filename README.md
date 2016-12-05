@@ -15,6 +15,8 @@ Though it does not support all requirements yet, the aim is to provide a complie
 By now, it should be compatible to [Avahi](http://avahi.org/) (tested) and Apple's Bonjour (untested).
 ould work in the most office, home and private environments.
 
+[![GoDoc](https://godoc.org/github.com/grandcat/zeroconf?status.svg)](https://godoc.org/github.com/grandcat/zeroconf)
+
 ## Browse for services in your local network
 
 ```go
