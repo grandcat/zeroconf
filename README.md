@@ -22,7 +22,7 @@ Nothing is as easy as that:
 ```bash
 $ go get -u github.com/grandcat/zeroconf
 ```
-This package requires Go 1.6 or later.
+This package requires **Go 1.7** (context in std lib) or later.
 
 ## Browse for services in your local network
 
