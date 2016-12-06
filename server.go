@@ -97,7 +97,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	return s, nil
 }
 
-// Register a service proxy by given argument. This call will skip the hostname/IP lookup and
+// RegisterProxy registers a service proxy. This call will skip the hostname/IP lookup and
 // will use the provided values.
 func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
@@ -264,7 +264,7 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 	if len(query.Answer) > 0 {
 		return nil
 	}
-	// Ignore questions with Authorative section for now
+	// Ignore questions with authoritative section for now
 	if len(query.Ns) > 0 {
 		return nil
 	}

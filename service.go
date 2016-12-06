@@ -13,9 +13,9 @@ type ServiceRecord struct {
 	Domain   string `json:"domain"` // If blank, assumes "local"
 
 	// private variable populated on the first call to ServiceName()/ServiceInstanceName()
-	serviceName         string `json:"-"`
-	serviceInstanceName string `json:"-"`
-	serviceTypeName     string `json:"-"`
+	serviceName         string
+	serviceInstanceName string
+	serviceTypeName     string
 }
 
 // ServiceName returns a complete service name (e.g. _foobar._tcp.local.), which is composed
@@ -41,6 +41,7 @@ func (s *ServiceRecord) ServiceInstanceName() string {
 	return s.serviceInstanceName
 }
 
+// ServiceTypeName returns the complete identifier for a DNS-SD query.
 func (s *ServiceRecord) ServiceTypeName() string {
 	// If not cached - compose and cache
 	if s.serviceTypeName == "" {
