@@ -1,4 +1,4 @@
-// Package zerconf is a pure Golang library that employs Multicast DNS-SD for
+// Package zeroconf is a pure Golang library that employs Multicast DNS-SD for
 //
 // browsing and resolving services in your network and
 // registering own services
