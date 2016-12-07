@@ -105,7 +105,7 @@ _Notes:_
     Some test scenarios demonstrated that the overall robustness and performance increases when applying the suggested improvements.
 
 ## Credits
-Great thanks to [oleksandr](https://github.com/oleksandr/bonjour) and all contributing authors for the code this projects bases upon.
+Great thanks to [hashicorp](https://github.com/hashicorp/mdns) and to [oleksandr](https://github.com/oleksandr/bonjour) and all contributing authors for the code this projects bases upon.
 Large parts of the code are still the same.
 
 However, there are several reasons why I decided to create a fork of the original project:
