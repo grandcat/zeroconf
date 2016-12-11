@@ -175,7 +175,8 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 		log.Printf("[zeroconf] no suitable IPv6 interface: %s", err6.Error())
 	}
 	if err4 != nil && err6 != nil {
-		log.Fatalln("[zeroconf] abort.")
+		// No supported interface left.
+		return nil, fmt.Errorf("No supported interface")
 	}
 
 	s := &Server{
