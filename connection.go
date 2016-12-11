@@ -39,7 +39,6 @@ var (
 func joinUdp6Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
 	udpConn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
 	if err != nil {
-		log.Printf("[ERR] bonjour: Failed to bind to udp6 mutlicast: %v", err)
 		return nil, err
 	}
 
