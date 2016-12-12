@@ -37,7 +37,7 @@ type ClientOption func(*clientOpts)
 // SelectIPTraffic selects the type of IP packets (IPv4, IPv6, or both) this
 // instance listens for.
 // This does not guarantee that only mDNS entries of this sepcific
-// type passes. E.g. typical mDNS packets distributed via IPv4, often contain
+// type passes. E.g. typical mDNS packets distributed via IPv4, may contain
 // both DNS A and AAAA entries.
 func SelectIPTraffic(t IPType) ClientOption {
 	return func(o *clientOpts) {
@@ -337,7 +337,6 @@ func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error 
 
 	for {
 		// Do periodic query.
-		log.Println(">>> Doing periodic query..")
 		if err := c.query(params); err != nil {
 			// XXX: use own error handling instead of misuse of context
 			_, cancel := context.WithCancel(ctx)
