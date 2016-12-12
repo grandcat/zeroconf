@@ -7,6 +7,9 @@ import (
 	"net"
 	"strings"
 
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
+
 	"time"
 
 	"github.com/cenkalti/backoff"
@@ -37,7 +40,7 @@ type ClientOption func(*clientOpts)
 // SelectIPTraffic selects the type of IP packets (IPv4, IPv6, or both) this
 // instance listens for.
 // This does not guarantee that only mDNS entries of this sepcific
-// type passes. E.g. typical mDNS packets distributed via IPv4, often contain
+// type passes. E.g. typical mDNS packets distributed via IPv4, may contain
 // both DNS A and AAAA entries.
 func SelectIPTraffic(t IPType) ClientOption {
 	return func(o *clientOpts) {
@@ -129,14 +132,14 @@ func defaultParams(service string) *LookupParams {
 
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
 type client struct {
-	ipv4conn *net.UDPConn
-	ipv6conn *net.UDPConn
+	ipv4conn *ipv4.PacketConn
+	ipv6conn *ipv6.PacketConn
 }
 
 // Client structure constructor
 func newClient(opts clientOpts) (*client, error) {
 	// IPv4 interfaces
-	var ipv4conn *net.UDPConn
+	var ipv4conn *ipv4.PacketConn
 	if (opts.listenOn & IPv4) > 0 {
 		var err error
 		ipv4conn, err = joinUdp4Multicast(opts.ifaces)
@@ -145,7 +148,7 @@ func newClient(opts clientOpts) (*client, error) {
 		}
 	}
 	// IPv6 interfaces
-	var ipv6conn *net.UDPConn
+	var ipv6conn *ipv6.PacketConn
 	if (opts.listenOn & IPv6) > 0 {
 		var err error
 		ipv6conn, err = joinUdp6Multicast(opts.ifaces)
@@ -286,10 +289,25 @@ func (c *client) shutdown() {
 
 // Data receiving routine reads from connection, unpacks packets into dns.Msg
 // structures and sends them to a given msgCh channel
-func (c *client) recv(ctx context.Context, l *net.UDPConn, msgCh chan *dns.Msg) {
-	if l == nil {
+func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *dns.Msg) {
+	var readFrom func([]byte) (n int, src net.Addr, err error)
+
+	switch pConn := l.(type) {
+	case *ipv6.PacketConn:
+		readFrom = func(b []byte) (n int, src net.Addr, err error) {
+			n, _, src, err = pConn.ReadFrom(b)
+			return
+		}
+	case *ipv4.PacketConn:
+		readFrom = func(b []byte) (n int, src net.Addr, err error) {
+			n, _, src, err = pConn.ReadFrom(b)
+			return
+		}
+
+	default:
 		return
 	}
+
 	buf := make([]byte, 65536)
 	var fatalErr error
 	for {
@@ -301,7 +319,7 @@ func (c *client) recv(ctx context.Context, l *net.UDPConn, msgCh chan *dns.Msg) 
 			return
 		}
 
-		n, _, err := l.ReadFrom(buf)
+		n, _, err := readFrom(buf)
 		if err != nil {
 			fatalErr = err
 			continue
@@ -337,7 +355,6 @@ func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error 
 
 	for {
 		// Do periodic query.
-		log.Println(">>> Doing periodic query..")
 		if err := c.query(params); err != nil {
 			// XXX: use own error handling instead of misuse of context
 			_, cancel := context.WithCancel(ctx)
@@ -401,10 +418,10 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 		return err
 	}
 	if c.ipv4conn != nil {
-		c.ipv4conn.WriteTo(buf, ipv4Addr)
+		c.ipv4conn.WriteTo(buf, nil, ipv4Addr)
 	}
 	if c.ipv6conn != nil {
-		c.ipv6conn.WriteTo(buf, ipv6Addr)
+		c.ipv6conn.WriteTo(buf, nil, ipv6Addr)
 	}
 	return nil
 }
