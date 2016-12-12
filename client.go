@@ -50,8 +50,7 @@ func SelectIPTraffic(t IPType) ClientOption {
 
 // Resolver acts as entry point for service lookups and to browse the DNS-SD.
 type Resolver struct {
-	c    *client
-	opts clientOpts
+	c *client
 }
 
 // NewResolver creates a new resolver and joins the UDP multicast groups to
@@ -72,8 +71,7 @@ func NewResolver(options ...ClientOption) (*Resolver, error) {
 		return nil, err
 	}
 	return &Resolver{
-		c:    c,
-		opts: conf,
+		c: c,
 	}, nil
 }
 
@@ -134,15 +132,20 @@ func defaultParams(service string) *LookupParams {
 type client struct {
 	ipv4conn *ipv4.PacketConn
 	ipv6conn *ipv6.PacketConn
+	ifaces   []net.Interface
 }
 
 // Client structure constructor
 func newClient(opts clientOpts) (*client, error) {
+	ifaces := opts.ifaces
+	if len(ifaces) == 0 {
+		ifaces = listMulticastInterfaces()
+	}
 	// IPv4 interfaces
 	var ipv4conn *ipv4.PacketConn
 	if (opts.listenOn & IPv4) > 0 {
 		var err error
-		ipv4conn, err = joinUdp4Multicast(opts.ifaces)
+		ipv4conn, err = joinUdp4Multicast(ifaces)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +154,7 @@ func newClient(opts clientOpts) (*client, error) {
 	var ipv6conn *ipv6.PacketConn
 	if (opts.listenOn & IPv6) > 0 {
 		var err error
-		ipv6conn, err = joinUdp6Multicast(opts.ifaces)
+		ipv6conn, err = joinUdp6Multicast(ifaces)
 		if err != nil {
 			return nil, err
 		}
@@ -160,6 +163,7 @@ func newClient(opts clientOpts) (*client, error) {
 	return &client{
 		ipv4conn: ipv4conn,
 		ipv6conn: ipv6conn,
+		ifaces:   ifaces,
 	}, nil
 }
 
@@ -188,6 +192,7 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 			entries = make(map[string]*ServiceEntry)
 			sections := append(msg.Answer, msg.Ns...)
 			sections = append(sections, msg.Extra...)
+
 			for _, answer := range sections {
 				switch rr := answer.(type) {
 				case *dns.PTR:
@@ -233,6 +238,11 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 					}
 					entries[rr.Hdr.Name].Text = rr.Txt
 					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
+				}
+			}
+			// Associate IPs in a second round as other fields should be filled by now.
+			for _, answer := range sections {
+				switch rr := answer.(type) {
 				case *dns.A:
 					for k, e := range entries {
 						if e.HostName == rr.Hdr.Name {
@@ -418,10 +428,18 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 		return err
 	}
 	if c.ipv4conn != nil {
-		c.ipv4conn.WriteTo(buf, nil, ipv4Addr)
+		var wcm ipv4.ControlMessage
+		for ifi := range c.ifaces {
+			wcm.IfIndex = c.ifaces[ifi].Index
+			c.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
+		}
 	}
 	if c.ipv6conn != nil {
-		c.ipv6conn.WriteTo(buf, nil, ipv6Addr)
+		var wcm ipv6.ControlMessage
+		for ifi := range c.ifaces {
+			wcm.IfIndex = c.ifaces[ifi].Index
+			c.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
+		}
 	}
 	return nil
 }
