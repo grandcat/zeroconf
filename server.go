@@ -159,9 +159,11 @@ const (
 
 // Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
-	service        *ServiceEntry
-	ipv4conn       *ipv4.PacketConn
-	ipv6conn       *ipv6.PacketConn
+	service  *ServiceEntry
+	ipv4conn *ipv4.PacketConn
+	ipv6conn *ipv6.PacketConn
+	ifaces   []net.Interface
+
 	shouldShutdown bool
 	shutdownLock   sync.Mutex
 	ttl            uint32
@@ -169,6 +171,10 @@ type Server struct {
 
 // Constructs server structure
 func newServer(ifaces []net.Interface) (*Server, error) {
+	if len(ifaces) == 0 {
+		ifaces = listMulticastInterfaces()
+	}
+
 	ipv4conn, err4 := joinUdp4Multicast(ifaces)
 	if err4 != nil {
 		log.Printf("[zeroconf] no suitable IPv4 interface: %s", err4.Error())
@@ -185,6 +191,7 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 	s := &Server{
 		ipv4conn: ipv4conn,
 		ipv6conn: ipv6conn,
+		ifaces:   ifaces,
 		ttl:      3200,
 	}
 
@@ -276,7 +283,7 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 func (s *Server) parsePacket(packet []byte, from net.Addr) error {
 	var msg dns.Msg
 	if err := msg.Unpack(packet); err != nil {
-		log.Printf("[ERR] bonjour: Failed to unpack packet: %v", err)
+		log.Printf("[ERR] zeroconf: Failed to unpack packet: %v", err)
 		return err
 	}
 	return s.handleQuery(&msg, from)
@@ -302,7 +309,7 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 			resp.Answer = []dns.RR{}
 			resp.Extra = []dns.RR{}
 			if err = s.handleQuestion(q, &resp); err != nil {
-				log.Printf("[ERR] bonjour: failed to handle question %v: %v",
+				log.Printf("[ERR] zeroconf: failed to handle question %v: %v",
 					q, err)
 				continue
 			}
@@ -533,7 +540,7 @@ func (s *Server) probe() {
 
 	for i := 0; i < multicastRepitions; i++ {
 		if err := s.multicastResponse(q); err != nil {
-			log.Println("[ERR] bonjour: failed to send probe:", err.Error())
+			log.Println("[ERR] zeroconf: failed to send probe:", err.Error())
 		}
 		time.Sleep(time.Duration(randomizer.Intn(250)) * time.Millisecond)
 	}
@@ -553,7 +560,7 @@ func (s *Server) probe() {
 	timeout := 1 * time.Second
 	for i := 0; i < multicastRepitions; i++ {
 		if err := s.multicastResponse(resp); err != nil {
-			log.Println("[ERR] bonjour: failed to send announcement:", err.Error())
+			log.Println("[ERR] zeroconf: failed to send announcement:", err.Error())
 		}
 		time.Sleep(timeout)
 		timeout *= 2
@@ -612,10 +619,19 @@ func (s *Server) multicastResponse(msg *dns.Msg) error {
 		return err
 	}
 	if s.ipv4conn != nil {
-		s.ipv4conn.WriteTo(buf, nil, ipv4Addr)
+		var wcm ipv4.ControlMessage
+		for ifi := range s.ifaces {
+			wcm.IfIndex = s.ifaces[ifi].Index
+			s.ipv4conn.WriteTo(buf, nil, ipv4Addr)
+		}
 	}
+
 	if s.ipv6conn != nil {
-		s.ipv6conn.WriteTo(buf, nil, ipv6Addr)
+		var wcm ipv6.ControlMessage
+		for ifi := range s.ifaces {
+			wcm.IfIndex = s.ifaces[ifi].Index
+			s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
+		}
 	}
 	return nil
 }
