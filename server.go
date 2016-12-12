@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
+
 	"github.com/miekg/dns"
 )
 
@@ -157,8 +160,8 @@ const (
 // Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
 	service        *ServiceEntry
-	ipv4conn       *net.UDPConn
-	ipv6conn       *net.UDPConn
+	ipv4conn       *ipv4.PacketConn
+	ipv6conn       *ipv6.PacketConn
 	shouldShutdown bool
 	shutdownLock   sync.Mutex
 	ttl            uint32
@@ -191,10 +194,10 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 // Start listeners and waits for the shutdown signal from exit channel
 func (s *Server) mainloop() {
 	if s.ipv4conn != nil {
-		go s.recv(s.ipv4conn)
+		go s.recv4(s.ipv4conn)
 	}
 	if s.ipv6conn != nil {
-		go s.recv(s.ipv6conn)
+		go s.recv6(s.ipv6conn)
 	}
 }
 
@@ -236,18 +239,35 @@ func (s *Server) shutdown() error {
 }
 
 // recv is a long running routine to receive packets from an interface
-func (s *Server) recv(c *net.UDPConn) {
+func (s *Server) recv4(c *ipv4.PacketConn) {
 	if c == nil {
 		return
 	}
 	buf := make([]byte, 65536)
 	for !s.shouldShutdown {
-		n, from, err := c.ReadFrom(buf)
+		n, _, from, err := c.ReadFrom(buf)
 		if err != nil {
 			continue
 		}
 		if err := s.parsePacket(buf[:n], from); err != nil {
-			log.Printf("[ERR] bonjour: Failed to handle query: %v", err)
+			log.Printf("[ERR] zeroconf: failed to handle query v4: %v", err)
+		}
+	}
+}
+
+// recv is a long running routine to receive packets from an interface
+func (s *Server) recv6(c *ipv6.PacketConn) {
+	if c == nil {
+		return
+	}
+	buf := make([]byte, 65536)
+	for !s.shouldShutdown {
+		n, _, from, err := c.ReadFrom(buf)
+		if err != nil {
+			continue
+		}
+		if err := s.parsePacket(buf[:n], from); err != nil {
+			log.Printf("[ERR] zeroconf: failed to handle query v6: %v", err)
 		}
 	}
 }
@@ -576,10 +596,10 @@ func (s *Server) unicastResponse(resp *dns.Msg, from net.Addr) error {
 	}
 	addr := from.(*net.UDPAddr)
 	if addr.IP.To4() != nil {
-		_, err = s.ipv4conn.WriteToUDP(buf, addr)
+		_, err = s.ipv4conn.WriteTo(buf, nil, addr)
 		return err
 	} else {
-		_, err = s.ipv6conn.WriteToUDP(buf, addr)
+		_, err = s.ipv6conn.WriteTo(buf, nil, addr)
 		return err
 	}
 }
@@ -592,10 +612,10 @@ func (s *Server) multicastResponse(msg *dns.Msg) error {
 		return err
 	}
 	if s.ipv4conn != nil {
-		s.ipv4conn.WriteTo(buf, ipv4Addr)
+		s.ipv4conn.WriteTo(buf, nil, ipv4Addr)
 	}
 	if s.ipv6conn != nil {
-		s.ipv6conn.WriteTo(buf, ipv6Addr)
+		s.ipv6conn.WriteTo(buf, nil, ipv6Addr)
 	}
 	return nil
 }

@@ -36,7 +36,7 @@ var (
 	}
 )
 
-func joinUdp6Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
+func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
 	udpConn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
 	if err != nil {
 		return nil, err
@@ -62,10 +62,10 @@ func joinUdp6Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
 		return nil, fmt.Errorf("udp6: failed to join any of these interfaces: %v", interfaces)
 	}
 
-	return udpConn, nil
+	return pkConn, nil
 }
 
-func joinUdp4Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
+func joinUdp4Multicast(interfaces []net.Interface) (*ipv4.PacketConn, error) {
 	udpConn, err := net.ListenUDP("udp4", mdnsWildcardAddrIPv4)
 	if err != nil {
 		log.Printf("[ERR] bonjour: Failed to bind to udp4 mutlicast: %v", err)
@@ -92,7 +92,7 @@ func joinUdp4Multicast(interfaces []net.Interface) (*net.UDPConn, error) {
 		return nil, fmt.Errorf("udp4: failed to join any of these interfaces: %v", interfaces)
 	}
 
-	return udpConn, nil
+	return pkConn, nil
 }
 
 func listMulticastInterfaces() []net.Interface {
