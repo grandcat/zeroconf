@@ -11,7 +11,7 @@ import (
 
 var (
 	service  = flag.String("service", "_workstation._tcp", "Set the service category to look for devices.")
-	domain   = flag.String("domain", "local.", "Set the search domain. For local networks, default is fine.")
+	domain   = flag.String("domain", "local", "Set the search domain. For local networks, default is fine.")
 	waitTime = flag.Int("wait", 10, "Duration in [s] to run discovery.")
 )
 
@@ -25,21 +25,11 @@ func main() {
 	}
 
 	entries := make(chan *zeroconf.ServiceEntry)
-
 	go func(results <-chan *zeroconf.ServiceEntry) {
-	queryloop:
-		for {
-			select {
-			case entry, more := <-results:
-				if !more {
-					log.Println("No more entries.")
-					break queryloop
-				}
-				log.Println(entry)
-				log.Printf("%s", entry.Instance)
-			}
+		for entry := range results {
+			log.Println(entry)
 		}
-
+		log.Println("No more entries.")
 	}(entries)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(*waitTime))
