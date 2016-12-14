@@ -36,17 +36,10 @@ if err != nil {
 
 entries := make(chan *zeroconf.ServiceEntry)
 go func(results <-chan *zeroconf.ServiceEntry) {
-queryloop:
-    for {
-        select {
-        case entry, more := <-results:
-            if !more {
-                break queryloop
-            }
-            log.Println(entry)
-        }
+    for entry := range results {
+        log.Println(entry)
     }
-
+    log.Println("No more entries.")
 }(entries)
 
 ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
