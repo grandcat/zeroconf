@@ -309,17 +309,19 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 			continue
 		}
 		// Check if there is an answer
-		if len(resp.Answer) > 0 {
-			if isUnicastQuestion(q) {
-				// Send unicast
-				if e := s.unicastResponse(&resp, from); e != nil {
-					err = e
-				}
-			} else {
-				// Send mulicast
-				if e := s.multicastResponse(&resp); e != nil {
-					err = e
-				}
+		if len(resp.Answer) == 0 {
+			continue
+		}
+
+		if isUnicastQuestion(q) {
+			// Send unicast
+			if e := s.unicastResponse(&resp, from); e != nil {
+				err = e
+			}
+		} else {
+			// Send mulicast
+			if e := s.multicastResponse(&resp); e != nil {
+				err = e
 			}
 		}
 	}
