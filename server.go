@@ -291,10 +291,6 @@ func (s *Server) parsePacket(packet []byte, from net.Addr) error {
 
 // handleQuery is used to handle an incoming query
 func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
-	// Ignore answer for now
-	if len(query.Answer) > 0 {
-		return nil
-	}
 	// Ignore questions with authoritative section for now
 	if len(query.Ns) > 0 {
 		return nil
