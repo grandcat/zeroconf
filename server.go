@@ -298,29 +298,27 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 
 	// Handle each question
 	var err error
-	if len(query.Question) > 0 {
-		for _, q := range query.Question {
-			resp := dns.Msg{}
-			resp.SetReply(query)
-			resp.Answer = []dns.RR{}
-			resp.Extra = []dns.RR{}
-			if err = s.handleQuestion(q, &resp); err != nil {
-				log.Printf("[ERR] zeroconf: failed to handle question %v: %v",
-					q, err)
-				continue
-			}
-			// Check if there is an answer
-			if len(resp.Answer) > 0 {
-				if isUnicastQuestion(q) {
-					// Send unicast
-					if e := s.unicastResponse(&resp, from); e != nil {
-						err = e
-					}
-				} else {
-					// Send mulicast
-					if e := s.multicastResponse(&resp); e != nil {
-						err = e
-					}
+	for _, q := range query.Question {
+		resp := dns.Msg{}
+		resp.SetReply(query)
+		resp.Answer = []dns.RR{}
+		resp.Extra = []dns.RR{}
+		if err = s.handleQuestion(q, &resp); err != nil {
+			log.Printf("[ERR] zeroconf: failed to handle question %v: %v",
+				q, err)
+			continue
+		}
+		// Check if there is an answer
+		if len(resp.Answer) > 0 {
+			if isUnicastQuestion(q) {
+				// Send unicast
+				if e := s.unicastResponse(&resp, from); e != nil {
+					err = e
+				}
+			} else {
+				// Send mulicast
+				if e := s.multicastResponse(&resp); e != nil {
+					err = e
 				}
 			}
 		}
