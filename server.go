@@ -301,6 +301,8 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 	for _, q := range query.Question {
 		resp := dns.Msg{}
 		resp.SetReply(query)
+		resp.RecursionDesired = false
+		resp.Authoritative = true
 		resp.Question = nil // RFC6762 section 6 "responses MUST NOT contain any questions"
 		resp.Answer = []dns.RR{}
 		resp.Extra = []dns.RR{}
