@@ -306,7 +306,7 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 		resp.Question = nil // RFC6762 section 6 "responses MUST NOT contain any questions"
 		resp.Answer = []dns.RR{}
 		resp.Extra = []dns.RR{}
-		if err = s.handleQuestion(q, &resp); err != nil {
+		if err = s.handleQuestion(q, &resp, query); err != nil {
 			log.Printf("[ERR] zeroconf: failed to handle question %v: %v",
 				q, err)
 			continue
@@ -332,19 +332,53 @@ func (s *Server) handleQuery(query *dns.Msg, from net.Addr) error {
 	return err
 }
 
+// RFC6762 7.1. Known-Answer Suppression
+func isKnownAnswer(resp *dns.Msg, query *dns.Msg) bool {
+	if len(resp.Answer) == 0 || len(query.Answer) == 0 {
+		return false
+	}
+
+	if resp.Answer[0].Header().Rrtype != dns.TypePTR {
+		return false
+	}
+	answer := resp.Answer[0].(*dns.PTR)
+
+	for _, known := range query.Answer {
+		hdr := known.Header()
+		if hdr.Rrtype != answer.Hdr.Rrtype {
+			continue
+		}
+		ptr := known.(*dns.PTR)
+		if ptr.Ptr == answer.Ptr && hdr.Ttl >= answer.Hdr.Ttl/2 {
+			log.Printf("skipping known answer: %v", ptr)
+			return true
+		}
+	}
+
+	return false
+}
+
 // handleQuestion is used to handle an incoming question
-func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg) error {
+func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg) error {
 	if s.service == nil {
 		return nil
 	}
 
 	switch q.Name {
-	case s.service.ServiceName():
-		s.composeBrowsingAnswers(resp, s.ttl)
-	case s.service.ServiceInstanceName():
-		s.composeLookupAnswers(resp, s.ttl)
 	case s.service.ServiceTypeName():
 		s.serviceTypeName(resp, s.ttl)
+		if isKnownAnswer(resp, query) {
+			resp.Answer = nil
+		}
+
+	case s.service.ServiceName():
+		s.composeBrowsingAnswers(resp, s.ttl)
+		if isKnownAnswer(resp, query) {
+			resp.Answer = nil
+		}
+
+	case s.service.ServiceInstanceName():
+		s.composeLookupAnswers(resp, s.ttl)
 	}
 
 	return nil
