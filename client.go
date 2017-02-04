@@ -48,6 +48,13 @@ func SelectIPTraffic(t IPType) ClientOption {
 	}
 }
 
+// SelectIfaces selects the interfaces to query for mDNS records
+func SelectIfaces(ifaces []net.Interface) ClientOption {
+	return func(o *clientOpts) {
+		o.ifaces = ifaces
+	}
+}
+
 // Resolver acts as entry point for service lookups and to browse the DNS-SD.
 type Resolver struct {
 	c *client
