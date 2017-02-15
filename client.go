@@ -236,10 +236,12 @@ func newEntryCache() *entryCache {
 	return &entryCache{entries: make(map[string]*ServiceEntry)}
 }
 
-func computeExpiryDuration(entries map[string]*ServiceEntry) time.Duration {
+func computeExpiryDuration(ec *entryCache) time.Duration {
 	var expDuration time.Duration
+	entries := ec.entries
 	now := time.Now()
 
+	ec.RLock()
 	for _, v := range entries {
 		if v.refreshTime != nil {
 			d := v.refreshTime.Sub(now)
@@ -259,6 +261,7 @@ func computeExpiryDuration(entries map[string]*ServiceEntry) time.Duration {
 			}
 		}
 	}
+	ec.RUnlock()
 	//log.Printf("computeExpiryDuration next %d nanoseconds", expDuration)
 	return expDuration
 }
@@ -297,6 +300,7 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams, sentEntries
 			//log.Printf("timer expired")
 
 			now := time.Now()
+			sentEntries.Lock()
 			for k, v := range sentEntries.entries {
 				if (v.refreshTime != nil) && now.After(*v.refreshTime) {
 					//log.Printf("quering %s because of TTL refresh time expiry", k)
@@ -324,7 +328,8 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams, sentEntries
 					}
 				}
 			}
-			nextExpiryDuration := computeExpiryDuration(sentEntries.entries)
+			sentEntries.Unlock()
+			nextExpiryDuration := computeExpiryDuration(sentEntries)
 			if nextExpiryDuration != 0 {
 				t.Reset(nextExpiryDuration)
 			}
@@ -401,6 +406,7 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams, sentEntries
 		}
 
 		if len(entries) > 0 {
+			sentEntries.Lock()
 			for k, e := range entries {
 				if e.TTL == 0 {
 					//log.Printf("Received TTL==0 entry for %s", k)
@@ -443,8 +449,9 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams, sentEntries
 				sentEntries.entries[k] = e
 				params.disableProbing()
 			}
+			sentEntries.Unlock()
 
-			nextExpiryDuration := computeExpiryDuration(sentEntries.entries)
+			nextExpiryDuration := computeExpiryDuration(sentEntries)
 			if nextExpiryDuration != 0 {
 				t.Stop()
 				t.Reset(nextExpiryDuration)
@@ -574,8 +581,8 @@ func (c *client) query(params *LookupParams) error {
 	m := new(dns.Msg)
 	if serviceInstanceName != "" {
 		m.Question = []dns.Question{
-			{serviceInstanceName, dns.TypeSRV, dns.ClassINET},
-			{serviceInstanceName, dns.TypeTXT, dns.ClassINET},
+			dns.Question{serviceInstanceName, dns.TypeSRV, dns.ClassINET},
+			dns.Question{serviceInstanceName, dns.TypeTXT, dns.ClassINET},
 		}
 		m.RecursionDesired = false
 	} else {
