@@ -16,6 +16,10 @@ import (
 	"github.com/miekg/dns"
 )
 
+var (
+	DefaultTTL uint32 = 3200
+)
+
 const (
 	// Number of Multicast responses sent for a query message (default: 1 < x < 9)
 	multicastRepitions = 2
@@ -192,7 +196,7 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 		ipv4conn: ipv4conn,
 		ipv6conn: ipv6conn,
 		ifaces:   ifaces,
-		ttl:      3200,
+		ttl:      DefaultTTL,
 	}
 
 	return s, nil
