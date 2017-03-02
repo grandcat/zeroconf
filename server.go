@@ -68,20 +68,31 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 			return nil, err
 		}
 	}
-	// For IPv6, only choose reachable addresses.
+	// Select reachable interfaces' addresses.
+	var skippedLinkLocals []net.IP
 	for _, address := range iaddrs {
 		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
 			if ipnet.IP.To4() != nil {
 				entry.AddrIPv4 = append(entry.AddrIPv4, ipnet.IP)
-			} else if ipnet.IP.To16() != nil {
-				if ipnet.IP.IsGlobalUnicast() {
-					entry.AddrIPv6 = append(entry.AddrIPv6, ipnet.IP)
-					log.Printf("Added global IPv6: %v\n", ipnet.IP)
-				} else {
+
+			} else {
+				switch ip := ipnet.IP.To16(); ip != nil {
+				case ip.IsGlobalUnicast():
+					entry.AddrIPv6 = append(entry.AddrIPv6, ip)
+					log.Printf("Added global IPv6: %v\n", ip)
+				case ip.IsLinkLocalUnicast():
+					skippedLinkLocals = append(skippedLinkLocals, ip)
+					log.Printf("Remember linklocal IPv6: %v\n", ip)
+				default:
 					log.Printf("Skipped IPv6: %v\n", ipnet.IP)
 				}
+
 			}
 		}
+	}
+	// IPv6: if no address with global scope exists, fall back to linklocal.
+	if len(entry.AddrIPv6) == 0 && len(skippedLinkLocals) > 0 {
+		entry.AddrIPv6 = skippedLinkLocals
 	}
 
 	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
