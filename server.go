@@ -53,8 +53,8 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
 	}
 
-	if ifaces == nil {
-		ifaces, _ = net.Interfaces()
+	if len(ifaces) == 0 {
+		ifaces = listMulticastInterfaces()
 	}
 
 	for _, iface := range ifaces {
@@ -120,6 +120,10 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 		}
 	}
 
+	if len(ifaces) == 0 {
+		ifaces = listMulticastInterfaces()
+	}
+
 	s, err := newServer(ifaces)
 	if err != nil {
 		return nil, err
@@ -150,10 +154,6 @@ type Server struct {
 
 // Constructs server structure
 func newServer(ifaces []net.Interface) (*Server, error) {
-	if len(ifaces) == 0 {
-		ifaces = listMulticastInterfaces()
-	}
-
 	ipv4conn, err4 := joinUdp4Multicast(ifaces)
 	if err4 != nil {
 		log.Printf("[zeroconf] no suitable IPv4 interface: %s", err4.Error())
