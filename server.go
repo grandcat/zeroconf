@@ -430,30 +430,7 @@ func (s *Server) composeBrowsingAnswers(resp *dns.Msg, ttl uint32) {
 	}
 	resp.Extra = append(resp.Extra, srv, txt)
 
-	for _, ipv4 := range s.service.AddrIPv4 {
-		a := &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   s.service.HostName,
-				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
-				Ttl:    ttl,
-			},
-			A: ipv4,
-		}
-		resp.Extra = append(resp.Extra, a)
-	}
-	for _, ipv6 := range s.service.AddrIPv6 {
-		aaaa := &dns.AAAA{
-			Hdr: dns.RR_Header{
-				Name:   s.service.HostName,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
-				Ttl:    ttl,
-			},
-			AAAA: ipv6,
-		}
-		resp.Extra = append(resp.Extra, aaaa)
-	}
+	resp.Extra = s.appendAddrs(resp.Extra)
 }
 
 func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
@@ -503,30 +480,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32) {
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
 
-	for _, ipv4 := range s.service.AddrIPv4 {
-		a := &dns.A{
-			Hdr: dns.RR_Header{
-				Name:   s.service.HostName,
-				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET | qClassCacheFlush,
-				Ttl:    ttl,
-			},
-			A: ipv4,
-		}
-		resp.Answer = append(resp.Answer, a)
-	}
-	for _, ipv6 := range s.service.AddrIPv6 {
-		aaaa := &dns.AAAA{
-			Hdr: dns.RR_Header{
-				Name:   s.service.HostName,
-				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET | qClassCacheFlush,
-				Ttl:    ttl,
-			},
-			AAAA: ipv6,
-		}
-		resp.Answer = append(resp.Answer, aaaa)
-	}
+	resp.Answer = s.appendAddrs(resp.Answer)
 }
 
 func (s *Server) serviceTypeName(resp *dns.Msg, ttl uint32) {
@@ -637,6 +591,34 @@ func (s *Server) unregister() error {
 	resp.Extra = []dns.RR{}
 	s.composeLookupAnswers(resp, 0)
 	return s.multicastResponse(resp)
+}
+
+func (s *Server) appendAddrs(list []dns.RR) []dns.RR {
+	for _, ipv4 := range s.service.AddrIPv4 {
+		a := &dns.A{
+			Hdr: dns.RR_Header{
+				Name:   s.service.HostName,
+				Rrtype: dns.TypeA,
+				Class:  dns.ClassINET,
+				Ttl:    s.ttl,
+			},
+			A: ipv4,
+		}
+		list = append(list, a)
+	}
+	for _, ipv6 := range s.service.AddrIPv6 {
+		aaaa := &dns.AAAA{
+			Hdr: dns.RR_Header{
+				Name:   s.service.HostName,
+				Rrtype: dns.TypeAAAA,
+				Class:  dns.ClassINET,
+				Ttl:    s.ttl,
+			},
+			AAAA: ipv6,
+		}
+		list = append(list, aaaa)
+	}
+	return list
 }
 
 // unicastResponse is used to send a unicast response packet
