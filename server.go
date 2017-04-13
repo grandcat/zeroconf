@@ -53,46 +53,14 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
 	}
 
-	// Enumerate IPs for all interfaces given. If nil, take all available local interfaces.
-	var iaddrs []net.Addr
-	for _, ifi := range ifaces {
-		addr, err := ifi.Addrs()
-		if err != nil {
-			continue
-		}
-		iaddrs = append(iaddrs, addr...)
+	if ifaces == nil {
+		ifaces, _ = net.Interfaces()
 	}
-	if len(iaddrs) == 0 {
-		iaddrs, err = net.InterfaceAddrs()
-		if err != nil {
-			return nil, err
-		}
-	}
-	// Select reachable interfaces' addresses.
-	var skippedLinkLocals []net.IP
-	for _, address := range iaddrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				entry.AddrIPv4 = append(entry.AddrIPv4, ipnet.IP)
 
-			} else {
-				switch ip := ipnet.IP.To16(); ip != nil {
-				case ip.IsGlobalUnicast():
-					entry.AddrIPv6 = append(entry.AddrIPv6, ip)
-					log.Printf("Added global IPv6: %v\n", ip)
-				case ip.IsLinkLocalUnicast():
-					skippedLinkLocals = append(skippedLinkLocals, ip)
-					log.Printf("Remember linklocal IPv6: %v\n", ip)
-				default:
-					log.Printf("Skipped IPv6: %v\n", ipnet.IP)
-				}
-
-			}
-		}
-	}
-	// IPv6: if no address with global scope exists, fall back to linklocal.
-	if len(entry.AddrIPv6) == 0 && len(skippedLinkLocals) > 0 {
-		entry.AddrIPv6 = skippedLinkLocals
+	for _, iface := range ifaces {
+		v4, v6 := addrsForInterface(&iface)
+		entry.AddrIPv4 = append(entry.AddrIPv4, v4...)
+		entry.AddrIPv6 = append(entry.AddrIPv6, v6...)
 	}
 
 	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
@@ -594,7 +562,15 @@ func (s *Server) unregister() error {
 }
 
 func (s *Server) appendAddrs(list []dns.RR, ifIndex int) []dns.RR {
-	for _, ipv4 := range s.service.AddrIPv4 {
+	var v4, v6 []net.IP
+	iface, _ := net.InterfaceByIndex(ifIndex)
+	if iface != nil {
+		v4, v6 = addrsForInterface(iface)
+	} else {
+		v4 = s.service.AddrIPv4
+		v6 = s.service.AddrIPv6
+	}
+	for _, ipv4 := range v4 {
 		a := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
@@ -606,7 +582,7 @@ func (s *Server) appendAddrs(list []dns.RR, ifIndex int) []dns.RR {
 		}
 		list = append(list, a)
 	}
-	for _, ipv6 := range s.service.AddrIPv6 {
+	for _, ipv6 := range v6 {
 		aaaa := &dns.AAAA{
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
@@ -619,6 +595,29 @@ func (s *Server) appendAddrs(list []dns.RR, ifIndex int) []dns.RR {
 		list = append(list, aaaa)
 	}
 	return list
+}
+
+func addrsForInterface(iface *net.Interface) ([]net.IP, []net.IP) {
+	var v4, v6, v6local []net.IP
+	addrs, _ := iface.Addrs()
+	for _, address := range addrs {
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				v4 = append(v4, ipnet.IP)
+			} else {
+				switch ip := ipnet.IP.To16(); ip != nil {
+				case ip.IsGlobalUnicast():
+					v6 = append(v6, ipnet.IP)
+				case ip.IsLinkLocalUnicast():
+					v6local = append(v6local, ipnet.IP)
+				}
+			}
+		}
+	}
+	if len(v6) == 0 {
+		v6 = v6local
+	}
+	return v4, v6
 }
 
 // unicastResponse is used to send a unicast response packet
