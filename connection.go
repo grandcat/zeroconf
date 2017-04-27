@@ -44,6 +44,7 @@ func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
 
 	// Join multicast groups to receive announcements
 	pkConn := ipv6.NewPacketConn(udpConn)
+	pkConn.SetControlMessage(ipv6.FlagInterface, true)
 
 	if len(interfaces) == 0 {
 		interfaces = listMulticastInterfaces()
@@ -74,6 +75,7 @@ func joinUdp4Multicast(interfaces []net.Interface) (*ipv4.PacketConn, error) {
 
 	// Join multicast groups to receive announcements
 	pkConn := ipv4.NewPacketConn(udpConn)
+	pkConn.SetControlMessage(ipv4.FlagInterface, true)
 
 	if len(interfaces) == 0 {
 		interfaces = listMulticastInterfaces()
