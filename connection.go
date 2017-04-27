@@ -102,6 +102,9 @@ func listMulticastInterfaces() []net.Interface {
 		return nil
 	}
 	for _, ifi := range ifaces {
+		if (ifi.Flags & net.FlagUp) == 0 {
+			continue
+		}
 		if (ifi.Flags & net.FlagMulticast) > 0 {
 			interfaces = append(interfaces, ifi)
 		}
