@@ -231,11 +231,15 @@ func (s *Server) recv4(c *ipv4.PacketConn) {
 	}
 	buf := make([]byte, 65536)
 	for !s.shouldShutdown {
+		var ifIndex int
 		n, cm, from, err := c.ReadFrom(buf)
 		if err != nil {
 			continue
 		}
-		if err := s.parsePacket(buf[:n], cm.IfIndex, from); err != nil {
+		if cm != nil {
+			ifIndex = cm.IfIndex
+		}
+		if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
 			log.Printf("[ERR] zeroconf: failed to handle query v4: %v", err)
 		}
 	}
@@ -248,11 +252,15 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 	}
 	buf := make([]byte, 65536)
 	for !s.shouldShutdown {
+		var ifIndex int
 		n, cm, from, err := c.ReadFrom(buf)
 		if err != nil {
 			continue
 		}
-		if err := s.parsePacket(buf[:n], cm.IfIndex, from); err != nil {
+		if cm != nil {
+			ifIndex = cm.IfIndex
+		}
+		if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
 			log.Printf("[ERR] zeroconf: failed to handle query v6: %v", err)
 		}
 	}
