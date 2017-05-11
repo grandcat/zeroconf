@@ -269,6 +269,8 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 		if len(entries) > 0 {
 			for k, e := range entries {
 				if e.TTL == 0 {
+					// send the data such that the client knows the deletion
+					params.Entries <- e
 					delete(entries, k)
 					delete(sentEntries, k)
 					continue
