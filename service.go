@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 // ServiceRecord contains the basic description of a service, which contains instance name, service type & domain
@@ -62,7 +63,10 @@ func NewServiceRecord(instance, service, domain string) *ServiceRecord {
 // LookupParams contains configurable properties to create a service discovery request
 type LookupParams struct {
 	ServiceRecord
-	Entries chan<- *ServiceEntry // Entries Channel
+	Entries        chan<- *ServiceEntry // Entries Channel
+	DeletedEntries chan<- *ServiceEntry // Channel for Deleted Entries
+
+	Events chan<- *ServiceEvent // Channel for Events - Both updated/deleted
 
 	stopProbing chan struct{}
 	once        sync.Once
@@ -81,12 +85,31 @@ func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEn
 // Notify subscriber that no more entries will arrive. Mostly caused
 // by an expired context.
 func (l *LookupParams) done() {
-	close(l.Entries)
+	if l.Entries != nil {
+		close(l.Entries)
+	}
+	if l.DeletedEntries != nil {
+		close(l.DeletedEntries)
+	}
+
+	if l.Events != nil {
+		close(l.Events)
+	}
 }
 
 func (l *LookupParams) disableProbing() {
 	l.once.Do(func() { close(l.stopProbing) })
 }
+
+// ServiceEventType is type of event happening on a service
+type ServiceEventType string
+
+const (
+	// NewOrUpdated service instance
+	NewOrUpdated ServiceEventType = "NewOrUpdated"
+	// Removed notifies when an instance is going away
+	Removed ServiceEventType = "Removed"
+)
 
 // ServiceEntry represents a browse/lookup result for client API.
 // It is also used to configure service registration (server API), which is
@@ -99,6 +122,39 @@ type ServiceEntry struct {
 	TTL      uint32   `json:"ttl"`      // TTL of the service record
 	AddrIPv4 []net.IP `json:"-"`        // Host machine IPv4 address
 	AddrIPv6 []net.IP `json:"-"`        // Host machine IPv6 address
+
+	refreshTime *time.Time // when to refresh entry before the cache expiry
+	expiryTime  *time.Time // when to expire entry and delete from cache
+}
+
+// ServiceEvent is returned in channel by browsev3
+type ServiceEvent struct {
+	ServiceEntry
+	EventType ServiceEventType // whether its removed or updated
+}
+
+type entryCache struct {
+	sync.RWMutex
+	entries map[string]*ServiceEntry
+}
+
+// Browser is reference to an instance of browser
+type Browser struct {
+	cache *entryCache
+}
+
+// Entries returns the current cache
+func (b *Browser) Entries() []ServiceEntry {
+	if b.cache != nil {
+		var r []ServiceEntry
+		b.cache.RLock()
+		for _, v := range b.cache.entries {
+			r = append(r, *v)
+		}
+		b.cache.RUnlock()
+		return r
+	}
+	return nil
 }
 
 // NewServiceEntry constructs a ServiceEntry.

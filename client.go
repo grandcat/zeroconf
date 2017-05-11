@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"strings"
 
@@ -84,13 +85,16 @@ func NewResolver(options ...ClientOption) (*Resolver, error) {
 
 // Browse for all services of a given type in a given domain.
 func (r *Resolver) Browse(ctx context.Context, service, domain string, entries chan<- *ServiceEntry) error {
+	b := Browser{}
+
 	params := defaultParams(service)
 	if domain != "" {
 		params.Domain = domain
 	}
 	params.Entries = entries
 
-	go r.c.mainloop(ctx, params)
+	b.cache = newEntryCache()
+	go r.c.mainloop(ctx, params, b.cache)
 
 	err := r.c.query(params)
 	if err != nil {
@@ -105,6 +109,59 @@ func (r *Resolver) Browse(ctx context.Context, service, domain string, entries c
 	return nil
 }
 
+// Browsev2 for all services of a given type in a given domain. When  entries are removed, events send to deletedEntries if non-nil.
+func (r *Resolver) Browsev2(ctx context.Context, service, domain string, entries, deletedEntries chan<- *ServiceEntry) error {
+	b := Browser{}
+	params := defaultParams(service)
+	if domain != "" {
+		params.Domain = domain
+	}
+	params.Entries = entries
+	params.DeletedEntries = deletedEntries
+
+	b.cache = newEntryCache()
+	go r.c.mainloop(ctx, params, b.cache)
+
+	err := r.c.query(params)
+	if err != nil {
+		_, cancel := context.WithCancel(ctx)
+		cancel()
+		return err
+	}
+	// If previous probe was ok, it should be fine now. In case of an error later on,
+	// the entries' queue is closed.
+	go r.c.periodicQuery(ctx, params)
+
+	return nil
+}
+
+// Browsev3 for all services of a given type in a given domain.
+func (r *Resolver) Browsev3(ctx context.Context, service, domain string, events chan<- *ServiceEvent) (*Browser, error) {
+	b := Browser{}
+
+	params := defaultParams(service)
+	if domain != "" {
+		params.Domain = domain
+	}
+	params.Entries = nil
+	params.Events = events
+
+	b.cache = newEntryCache()
+	go r.c.mainloop(ctx, params, b.cache)
+
+	err := r.c.query(params)
+	if err != nil {
+		_, cancel := context.WithCancel(ctx)
+		cancel()
+		return nil, err
+	}
+	// If previous probe was ok, it should be fine now. In case of an error later on,
+	// the entries' queue is closed.
+	go r.c.periodicQuery(ctx, params)
+
+	return &b, nil
+}
+
 // Lookup a specific service by its name and type in a given domain.
 func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
@@ -114,7 +171,8 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 	}
 	params.Entries = entries
 
-	go r.c.mainloop(ctx, params)
+	sentEntries := newEntryCache()
+	go r.c.mainloop(ctx, params, sentEntries)
 
 	err := r.c.query(params)
 	if err != nil {
@@ -174,8 +232,49 @@ func newClient(opts clientOpts) (*client, error) {
 	}, nil
 }
 
+func newEntryCache() *entryCache {
+	return &entryCache{entries: make(map[string]*ServiceEntry)}
+}
+
+func computeExpiryDuration(ec *entryCache) time.Duration {
+	var expDuration time.Duration
+	entries := ec.entries
+	now := time.Now()
+
+	ec.RLock()
+	for _, v := range entries {
+		if v.refreshTime != nil {
+			d := v.refreshTime.Sub(now)
+			if expDuration == 0 {
+				expDuration = d
+			} else if d < expDuration {
+				expDuration = d
+			}
+		}
+		if v.expiryTime != nil {
+			d := v.expiryTime.Sub(now)
+
+			if expDuration == 0 {
+				expDuration = d
+			} else if d < expDuration {
+				expDuration = d
+			}
+		}
+	}
+	ec.RUnlock()
+	//log.Printf("computeExpiryDuration next %d nanoseconds", expDuration)
+	return expDuration
+}
+
 // Start listeners and waits for the shutdown signal from exit channel
-func (c *client) mainloop(ctx context.Context, params *LookupParams) {
+func (c *client) mainloop(ctx context.Context, params *LookupParams, sentEntries *entryCache) {
+	// create a time and stop it. we have a channel in the loop to look for timeouts
+	t := time.NewTimer(time.Second)
+	if !t.Stop() {
+		<-t.C
+	}
+	lastQueriedTime := time.Now()
+
 	// start listening for responses
 	msgCh := make(chan *dns.Msg, 32)
 	if c.ipv4conn != nil {
@@ -186,15 +285,55 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 	}
 
 	// Iterate through channels from listeners goroutines
-	var entries, sentEntries map[string]*ServiceEntry
-	sentEntries = make(map[string]*ServiceEntry)
+	var entries map[string]*ServiceEntry
 	for {
 		select {
 		case <-ctx.Done():
 			// Context expired. Notify subscriber that we are done here.
 			params.done()
 			c.shutdown()
+			if !t.Stop() {
+				<-t.C
+			}
 			return
+		case <-t.C:
+			//log.Printf("timer expired")
+
+			now := time.Now()
+			sentEntries.Lock()
+			for k, v := range sentEntries.entries {
+				if (v.refreshTime != nil) && now.After(*v.refreshTime) {
+					//log.Printf("quering %s because of TTL refresh time expiry", k)
+
+					// query only if my previous query is older than a second
+					// If many entries are getting refreshed in a short time this should prevent flood to the network
+					if lastQueriedTime.Add(1 * time.Second).Before(time.Now()) {
+						c.query(params)
+						lastQueriedTime = time.Now()
+					}
+					v.refreshTime = nil
+				}
+
+				if (v.expiryTime != nil) && now.After(*v.expiryTime) {
+					//log.Printf("deleting %s because of TTL expiry", k)
+					delete(sentEntries.entries, k)
+
+					if params.DeletedEntries != nil {
+						params.DeletedEntries <- v
+					}
+
+					if params.Events != nil {
+						evt := ServiceEvent{ServiceEntry: *v, EventType: Removed}
+						params.Events <- &evt
+					}
+				}
+			}
+			sentEntries.Unlock()
+			nextExpiryDuration := computeExpiryDuration(sentEntries)
+			if nextExpiryDuration != 0 {
+				t.Reset(nextExpiryDuration)
+			}
+
 		case msg := <-msgCh:
 			entries = make(map[string]*ServiceEntry)
 			sections := append(msg.Answer, msg.Ns...)
@@ -267,13 +406,29 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 		}
 
 		if len(entries) > 0 {
+			sentEntries.Lock()
 			for k, e := range entries {
 				if e.TTL == 0 {
-					delete(entries, k)
-					delete(sentEntries, k)
+					//log.Printf("Received TTL==0 entry for %s", k)
+					if v, ok := sentEntries.entries[k]; ok {
+						// Expire the entry after 1 second. No need to refresh Entry with a query
+						et := time.Now().Add(1 * time.Second)
+						v.expiryTime = &et
+						v.refreshTime = nil
+					}
 					continue
 				}
-				if _, ok := sentEntries[k]; ok {
+				if v, ok := sentEntries.entries[k]; ok {
+					var rt, et time.Time
+					var frac float64
+
+					// random number between 75-85% of TTL expiry time. convert to float64 to overcome rounding errors
+					frac = (0.75 + rand.Float64()*0.1) * float64(e.TTL) * float64(time.Second)
+					rt = time.Now().Add(time.Duration(frac))
+					v.refreshTime = &rt
+
+					et = time.Now().Add(time.Duration(e.TTL) * time.Second)
+					v.expiryTime = &et
 					continue
 				}
 				// Require at least one resolved IP address for ServiceEntry
@@ -284,9 +439,22 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 				// Submit entry to subscriber and cache it.
 				// This is also a point to possibly stop probing actively for a
 				// service entry.
-				params.Entries <- e
-				sentEntries[k] = e
+				if params.Entries != nil {
+					params.Entries <- e
+				}
+				if params.Events != nil {
+					evt := ServiceEvent{ServiceEntry: *e, EventType: NewOrUpdated}
+					params.Events <- &evt
+				}
+				sentEntries.entries[k] = e
 				params.disableProbing()
+			}
+			sentEntries.Unlock()
+
+			nextExpiryDuration := computeExpiryDuration(sentEntries)
+			if nextExpiryDuration != 0 {
+				t.Stop()
+				t.Reset(nextExpiryDuration)
 			}
 			// reset entries
 			entries = make(map[string]*ServiceEntry)
