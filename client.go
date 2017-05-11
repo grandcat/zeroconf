@@ -450,3 +450,16 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 	}
 	return nil
 }
+
+// Browsev3 - A new type of browser which keeps a local cache of network services
+//    As events happen in network, including TTL expiry or new host joins, the event is returned in the channel
+func (r *Resolver) Browsev3(ctx context.Context, service, domain string, events chan<- *ServiceEvent) (*Browser, error) {
+	// Implementation in a separate commit/Pull-request
+	return nil, nil
+}
+
+// Entries return the entries in the local cache of the Browser
+func (b *Browser) Entries() []ServiceEntry {
+	// Implementation in a separate commit/Pull-request
+	return nil
+}

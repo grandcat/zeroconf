@@ -107,3 +107,22 @@ func NewServiceEntry(instance, service, domain string) *ServiceEntry {
 		ServiceRecord: *NewServiceRecord(instance, service, domain),
 	}
 }
+
+// ServiceEventType includes the ServiceEntry along with the event that happened in Network
+type ServiceEventType int
+
+const (
+	NewOrUpdated ServiceEventType = iota
+	Removed
+)
+
+// ServiceEvent is returned in channel by browsev3
+type ServiceEvent struct {
+	ServiceEntry
+	EventType ServiceEventType
+}
+
+// Browser is a reference to a specific instance of browser
+type Browser struct {
+	// cache - implemented in a separate commit
+}
