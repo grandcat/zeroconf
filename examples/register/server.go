@@ -3,13 +3,15 @@ package main
 import (
 	"flag"
 	"log"
+	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"time"
 
-	"github.com/grandcat/zeroconf"
+	"github.com/nasuku/zeroconf"
 )
 
 var (
@@ -18,12 +20,25 @@ var (
 	domain   = flag.String("domain", "local.", "Set the network domain. Default should be fine.")
 	port     = flag.Int("port", 42424, "Set the port the service is listening to.")
 	waitTime = flag.Int("wait", 10, "Duration in [s] to publish service for.")
+	intf     = flag.String("intf", "", "List of interfaces to register separated by ,")
 )
 
 func main() {
 	flag.Parse()
 
-	server, err := zeroconf.Register(*name, *service, *domain, *port, []string{"txtv=0", "lo=1", "la=2"}, nil)
+	zeroconf.DefaultTTL = 5
+	var intfList []net.Interface
+
+	if *intf != "" {
+		ifaces := strings.Split(*intf, ",")
+		for _, iface := range ifaces {
+			i, err := net.InterfaceByName(iface)
+			if err == nil {
+				intfList = append(intfList, *i)
+			}
+		}
+	}
+	server, err := zeroconf.Register(*name, *service, *domain, *port, []string{"txtv=0", "lo=1", "la=2"}, intfList)
 	if err != nil {
 		panic(err)
 	}
