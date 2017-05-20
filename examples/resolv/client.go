@@ -3,10 +3,11 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"time"
 
-	"github.com/grandcat/zeroconf"
+	"github.com/nasuku/zeroconf"
 )
 
 var (
@@ -34,12 +35,14 @@ func main() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*time.Duration(*waitTime))
 	defer cancel()
-	err = resolver.Browse(ctx, *service, *domain, entries)
+	b, err := resolver.Browse(ctx, *service, *domain, entries)
 	if err != nil {
 		log.Fatalln("Failed to browse:", err.Error())
 	}
 
 	<-ctx.Done()
+	// can get the total cache anytime
+	fmt.Printf("cached entries: %+v\n", b.Entries())
 	// Wait some additional time to see debug messages on go routine shutdown.
 	time.Sleep(1 * time.Second)
 }
