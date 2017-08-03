@@ -23,7 +23,7 @@ const (
 
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
-func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface, ttl uint32) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -67,10 +67,12 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		return nil, fmt.Errorf("Could not determine host IP addresses")
 	}
 
-	s, err := newServer(ifaces)
+	s, err := newServer(ifaces, true)
 	if err != nil {
 		return nil, err
 	}
+
+	s.TTL(ttl)
 
 	s.service = entry
 	go s.mainloop()
@@ -81,7 +83,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 
 // RegisterProxy registers a service proxy. This call will skip the hostname/IP lookup and
 // will use the provided values.
-func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface) (*Server, error) {
+func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface, ttl uint32) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -124,10 +126,12 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 		ifaces = listMulticastInterfaces()
 	}
 
-	s, err := newServer(ifaces)
+	s, err := newServer(ifaces, false)
 	if err != nil {
 		return nil, err
 	}
+
+	s.TTL(ttl)
 
 	s.service = entry
 	go s.mainloop()
@@ -150,10 +154,11 @@ type Server struct {
 	shouldShutdown bool
 	shutdownLock   sync.Mutex
 	ttl            uint32
+	refresh_ips    bool
 }
 
 // Constructs server structure
-func newServer(ifaces []net.Interface) (*Server, error) {
+func newServer(ifaces []net.Interface, refresh_ips bool) (*Server, error) {
 	ipv4conn, err4 := joinUdp4Multicast(ifaces)
 	if err4 != nil {
 		log.Printf("[zeroconf] no suitable IPv4 interface: %s", err4.Error())
@@ -168,10 +173,11 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 	}
 
 	s := &Server{
-		ipv4conn: ipv4conn,
-		ipv6conn: ipv6conn,
-		ifaces:   ifaces,
-		ttl:      3200,
+		ipv4conn:    ipv4conn,
+		ipv6conn:    ipv6conn,
+		ifaces:      ifaces,
+		ttl:         3200,
+		refresh_ips: refresh_ips,
 	}
 
 	return s, nil
@@ -572,7 +578,7 @@ func (s *Server) unregister() error {
 func (s *Server) appendAddrs(list []dns.RR, ifIndex int) []dns.RR {
 	var v4, v6 []net.IP
 	iface, _ := net.InterfaceByIndex(ifIndex)
-	if iface != nil {
+	if s.refresh_ips && iface != nil {
 		v4, v6 = addrsForInterface(iface)
 	} else {
 		v4 = s.service.AddrIPv4
