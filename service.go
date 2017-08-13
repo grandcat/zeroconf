@@ -12,7 +12,7 @@ type ServiceRecord struct {
 	Service  string `json:"type"`   // Service name (e.g. _http._tcp.)
 	Domain   string `json:"domain"` // If blank, assumes "local"
 
-	// private variable populated on the first call to ServiceName()/ServiceInstanceName()
+	// private variable populated on ServiceRecord creation
 	serviceName         string
 	serviceInstanceName string
 	serviceTypeName     string
@@ -21,42 +21,42 @@ type ServiceRecord struct {
 // ServiceName returns a complete service name (e.g. _foobar._tcp.local.), which is composed
 // of a service name (also referred as service type) and a domain.
 func (s *ServiceRecord) ServiceName() string {
-	if s.serviceName == "" {
-		s.serviceName = fmt.Sprintf("%s.%s.", trimDot(s.Service), trimDot(s.Domain))
-	}
 	return s.serviceName
 }
 
 // ServiceInstanceName returns a complete service instance name (e.g. MyDemo\ Service._foobar._tcp.local.),
 // which is composed from service instance name, service name and a domain.
 func (s *ServiceRecord) ServiceInstanceName() string {
-	// If no instance name provided we cannot compose service instance name
-	if s.Instance == "" {
-		return ""
-	}
-	// If not cached - compose and cache
-	if s.serviceInstanceName == "" {
-		s.serviceInstanceName = fmt.Sprintf("%s.%s", trimDot(s.Instance), s.ServiceName())
-	}
 	return s.serviceInstanceName
 }
 
 // ServiceTypeName returns the complete identifier for a DNS-SD query.
 func (s *ServiceRecord) ServiceTypeName() string {
-	// If not cached - compose and cache
-	if s.serviceTypeName == "" {
-		domain := "local"
-		if len(s.Domain) > 0 {
-			domain = trimDot(s.Domain)
-		}
-		s.serviceTypeName = fmt.Sprintf("_services._dns-sd._udp.%s.", domain)
-	}
 	return s.serviceTypeName
 }
 
 // NewServiceRecord constructs a ServiceRecord.
 func NewServiceRecord(instance, service, domain string) *ServiceRecord {
-	return &ServiceRecord{instance, service, domain, "", "", ""}
+	s := &ServiceRecord{
+		Instance:    instance,
+		Service:     service,
+		Domain:      domain,
+		serviceName: fmt.Sprintf("%s.%s.", trimDot(service), trimDot(domain)),
+	}
+
+	// Cache service instance name
+	if instance != "" {
+		s.serviceInstanceName = fmt.Sprintf("%s.%s", trimDot(s.Instance), s.ServiceName())
+	}
+
+	// Cache service type name domain
+	typeNameDomain := "local"
+	if len(s.Domain) > 0 {
+		typeNameDomain = trimDot(s.Domain)
+	}
+	s.serviceTypeName = fmt.Sprintf("_services._dns-sd._udp.%s.", typeNameDomain)
+
+	return s
 }
 
 // LookupParams contains configurable properties to create a service discovery request
