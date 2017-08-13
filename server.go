@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/ipv6"
 
 	"errors"
+
 	"github.com/miekg/dns"
 )
 
@@ -258,7 +259,7 @@ func (s *Server) recv4(c *ipv4.PacketConn) {
 				ifIndex = cm.IfIndex
 			}
 			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				log.Printf("[ERR] zeroconf: failed to handle query v4: %v", err)
+				// log.Printf("[ERR] zeroconf: failed to handle query v4: %v", err)
 			}
 		}
 	}
@@ -286,7 +287,7 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 				ifIndex = cm.IfIndex
 			}
 			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				log.Printf("[ERR] zeroconf: failed to handle query v6: %v", err)
+				// log.Printf("[ERR] zeroconf: failed to handle query v6: %v", err)
 			}
 		}
 	}
@@ -296,7 +297,7 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 func (s *Server) parsePacket(packet []byte, ifIndex int, from net.Addr) error {
 	var msg dns.Msg
 	if err := msg.Unpack(packet); err != nil {
-		log.Printf("[ERR] zeroconf: Failed to unpack packet: %v", err)
+		// log.Printf("[ERR] zeroconf: Failed to unpack packet: %v", err)
 		return err
 	}
 	return s.handleQuery(&msg, ifIndex, from)
@@ -320,8 +321,7 @@ func (s *Server) handleQuery(query *dns.Msg, ifIndex int, from net.Addr) error {
 		resp.Answer = []dns.RR{}
 		resp.Extra = []dns.RR{}
 		if err = s.handleQuestion(q, &resp, query, ifIndex); err != nil {
-			log.Printf("[ERR] zeroconf: failed to handle question %v: %v",
-				q, err)
+			// log.Printf("[ERR] zeroconf: failed to handle question %v: %v", q, err)
 			continue
 		}
 		// Check if there is an answer
@@ -363,7 +363,7 @@ func isKnownAnswer(resp *dns.Msg, query *dns.Msg) bool {
 		}
 		ptr := known.(*dns.PTR)
 		if ptr.Ptr == answer.Ptr && hdr.Ttl >= answer.Hdr.Ttl/2 {
-			log.Printf("skipping known answer: %v", ptr)
+			// log.Printf("skipping known answer: %v", ptr)
 			return true
 		}
 	}
@@ -686,7 +686,6 @@ func (s *Server) unicastResponse(resp *dns.Msg, ifIndex int, from net.Addr) erro
 func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 	buf, err := msg.Pack()
 	if err != nil {
-		log.Println("Failed to pack message!")
 		return err
 	}
 	if s.ipv4conn != nil {
