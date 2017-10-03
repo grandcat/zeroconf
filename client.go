@@ -89,18 +89,21 @@ func (r *Resolver) Browse(ctx context.Context, service, domain string, entries c
 		params.Domain = domain
 	}
 	params.Entries = entries
-
+	ctx, cancel := context.WithCancel(ctx)
 	go r.c.mainloop(ctx, params)
 
 	err := r.c.query(params)
 	if err != nil {
-		_, cancel := context.WithCancel(ctx)
 		cancel()
 		return err
 	}
 	// If previous probe was ok, it should be fine now. In case of an error later on,
 	// the entries' queue is closed.
-	go r.c.periodicQuery(ctx, params)
+	go func() {
+		if err := r.c.periodicQuery(ctx, params); err != nil {
+			cancel()
+		}
+	}()
 
 	return nil
 }
@@ -113,19 +116,21 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 		params.Domain = domain
 	}
 	params.Entries = entries
-
+	ctx, cancel := context.WithCancel(ctx)
 	go r.c.mainloop(ctx, params)
-
 	err := r.c.query(params)
 	if err != nil {
-		// XXX: replace cancel with own chan for abort on error
-		_, cancel := context.WithCancel(ctx)
+		// cancel mainloop
 		cancel()
 		return err
 	}
 	// If previous probe was ok, it should be fine now. In case of an error later on,
 	// the entries' queue is closed.
-	go r.c.periodicQuery(ctx, params)
+	go func() {
+		if err := r.c.periodicQuery(ctx, params); err != nil {
+			cancel()
+		}
+	}()
 
 	return nil
 }
@@ -373,12 +378,8 @@ func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error 
 	for {
 		// Do periodic query.
 		if err := c.query(params); err != nil {
-			// XXX: use own error handling instead of misuse of context
-			_, cancel := context.WithCancel(ctx)
-			cancel()
 			return err
 		}
-
 		// Backoff and cancel logic.
 		wait := bo.NextBackOff()
 		if wait == backoff.Stop {
