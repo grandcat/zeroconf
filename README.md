@@ -44,7 +44,7 @@ go func(results <-chan *zeroconf.ServiceEntry) {
 
 ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
 defer cancel()
-err = resolver.Browse(ctx, "_workstation._tcp", "local", entries)
+err = resolver.Browse(ctx, "_workstation._tcp", "local.", entries)
 if err != nil {
     log.Fatalln("Failed to browse:", err.Error())
 }
@@ -62,7 +62,7 @@ See https://github.com/grandcat/zeroconf/blob/master/examples/resolv/client.go.
 ## Register a service
 
 ```go
-server, err := zeroconf.Register("GoZeroconf", "_workstation._tcp", "local", 42424, []string{"txtv=0", "lo=1", "la=2"}, nil)
+server, err := zeroconf.Register("GoZeroconf", "_workstation._tcp", "local.", 42424, []string{"txtv=0", "lo=1", "la=2"}, nil)
 if err != nil {
     panic(err)
 }

@@ -343,7 +343,7 @@ func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *dns.Msg) {
 		}
 		msg := new(dns.Msg)
 		if err := msg.Unpack(buf[:n]); err != nil {
-			log.Printf("[WARN] mdns: Failed to unpack packet: %v", err)
+			// log.Printf("[WARN] mdns: Failed to unpack packet: %v", err)
 			continue
 		}
 		select {
