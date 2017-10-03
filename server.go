@@ -1,13 +1,13 @@
 package zeroconf
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/net/ipv4"
@@ -103,10 +103,11 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	if err != nil {
 		return nil, err
 	}
-
+	cx, cancelFn := context.WithCancel(context.Background())
+	s.cancelFunc = cancelFn
 	s.service = entry
-	go s.mainloop()
-	go s.probe()
+	go s.mainloop(cx)
+	go s.probe(cx)
 
 	return s, nil
 }
@@ -156,10 +157,11 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	if err != nil {
 		return nil, err
 	}
-
+	cx, cancelFn := context.WithCancel(context.Background())
+	s.cancelFunc = cancelFn
 	s.service = entry
-	go s.mainloop()
-	go s.probe()
+	go s.mainloop(cx)
+	go s.probe(cx)
 
 	return s, nil
 }
@@ -170,14 +172,12 @@ const (
 
 // Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
-	service  *ServiceEntry
-	ipv4conn *ipv4.PacketConn
-	ipv6conn *ipv6.PacketConn
-	ifaces   []net.Interface
-
-	shouldShutdown bool
-	shutdownLock   sync.Mutex
-	ttl            uint32
+	service    *ServiceEntry
+	ipv4conn   *ipv4.PacketConn
+	ipv6conn   *ipv6.PacketConn
+	ifaces     []net.Interface
+	ttl        uint32
+	cancelFunc context.CancelFunc
 }
 
 // Constructs server structure
@@ -210,17 +210,18 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 }
 
 // Start listeners and waits for the shutdown signal from exit channel
-func (s *Server) mainloop() {
+func (s *Server) mainloop(cx context.Context) {
 	if s.ipv4conn != nil {
-		go s.recv4(s.ipv4conn)
+		go s.recv4(cx, s.ipv4conn)
 	}
 	if s.ipv6conn != nil {
-		go s.recv6(s.ipv6conn)
+		go s.recv6(cx, s.ipv6conn)
 	}
 }
 
 // Shutdown closes all udp connections and unregisters the service
 func (s *Server) Shutdown() error {
+	s.cancelFunc()
 	return s.shutdown()
 }
 
@@ -237,16 +238,7 @@ func (s *Server) TTL(ttl uint32) {
 
 // Shutdown server will close currently open connections & channel
 func (s *Server) shutdown() error {
-	s.shutdownLock.Lock()
-	defer s.shutdownLock.Unlock()
-
 	s.unregister()
-
-	if s.shouldShutdown {
-		return nil
-	}
-	s.shouldShutdown = true
-
 	if s.ipv4conn != nil {
 		s.ipv4conn.Close()
 	}
@@ -257,12 +249,17 @@ func (s *Server) shutdown() error {
 }
 
 // recv is a long running routine to receive packets from an interface
-func (s *Server) recv4(c *ipv4.PacketConn) {
+func (s *Server) recv4(cx context.Context, c *ipv4.PacketConn) {
 	if c == nil {
 		return
 	}
 	buf := make([]byte, 65536)
-	for !s.shouldShutdown {
+	for {
+		select {
+		case <-cx.Done():
+			return
+		default:
+		}
 		n, _, from, err := c.ReadFrom(buf)
 		if err != nil {
 			continue
@@ -274,12 +271,17 @@ func (s *Server) recv4(c *ipv4.PacketConn) {
 }
 
 // recv is a long running routine to receive packets from an interface
-func (s *Server) recv6(c *ipv6.PacketConn) {
+func (s *Server) recv6(cx context.Context, c *ipv6.PacketConn) {
 	if c == nil {
 		return
 	}
 	buf := make([]byte, 65536)
-	for !s.shouldShutdown {
+	for {
+		select {
+		case <-cx.Done():
+			return
+		default:
+		}
 		n, _, from, err := c.ReadFrom(buf)
 		if err != nil {
 			continue
@@ -552,7 +554,7 @@ func (s *Server) serviceTypeName(resp *dns.Msg, ttl uint32) {
 
 // Perform probing & announcement
 //TODO: implement a proper probing & conflict resolution
-func (s *Server) probe() {
+func (s *Server) probe(cx context.Context) {
 	q := new(dns.Msg)
 	q.SetQuestion(s.service.ServiceInstanceName(), dns.TypePTR)
 	q.RecursionDesired = false
@@ -583,6 +585,11 @@ func (s *Server) probe() {
 	randomizer := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for i := 0; i < multicastRepitions; i++ {
+		select {
+		case <-cx.Done():
+			return
+		default:
+		}
 		if err := s.multicastResponse(q); err != nil {
 			log.Println("[ERR] zeroconf: failed to send probe:", err.Error())
 		}

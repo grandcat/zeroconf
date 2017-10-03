@@ -16,6 +16,7 @@ type ServiceRecord struct {
 	serviceName         string
 	serviceInstanceName string
 	serviceTypeName     string
+	lk                  sync.Mutex
 }
 
 // ServiceName returns a complete service name (e.g. _foobar._tcp.local.), which is composed
@@ -30,6 +31,8 @@ func (s *ServiceRecord) ServiceName() string {
 // ServiceInstanceName returns a complete service instance name (e.g. MyDemo\ Service._foobar._tcp.local.),
 // which is composed from service instance name, service name and a domain.
 func (s *ServiceRecord) ServiceInstanceName() string {
+	s.lk.Lock()
+	defer s.lk.Unlock()
 	// If no instance name provided we cannot compose service instance name
 	if s.Instance == "" {
 		return ""
@@ -56,7 +59,11 @@ func (s *ServiceRecord) ServiceTypeName() string {
 
 // NewServiceRecord constructs a ServiceRecord.
 func NewServiceRecord(instance, service, domain string) *ServiceRecord {
-	return &ServiceRecord{instance, service, domain, "", "", ""}
+	return &ServiceRecord{
+		Instance: instance,
+		Service:  service,
+		Domain:   domain,
+	}
 }
 
 // LookupParams contains configurable properties to create a service discovery request
