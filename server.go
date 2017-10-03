@@ -220,8 +220,8 @@ func (s *Server) mainloop() {
 }
 
 // Shutdown closes all udp connections and unregisters the service
-func (s *Server) Shutdown() {
-	s.shutdown()
+func (s *Server) Shutdown() error {
+	return s.shutdown()
 }
 
 // SetText updates and announces the TXT records
