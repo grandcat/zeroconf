@@ -21,9 +21,40 @@ const (
 	multicastRepitions = 2
 )
 
+type ZeroServer interface {
+	// SetText updates and announces the TXT records
+	SetText(text []string)
+	// TTL sets the TTL for DNS replies
+	TTL(ttl uint32)
+}
+
+// RegisterContext is like Register except it's being shutdown using the context cancelation
+// mechanism
+func RegisterContext(cx context.Context, instance, service, domain string, port int, text []string, ifaces []net.Interface) (ZeroServer, error) {
+	s, err := registerServer(instance, service, domain, port, text, ifaces)
+	if err != nil {
+		return nil, err
+	}
+	go s.mainloop(cx)
+	go s.probe(cx)
+	return s, nil
+}
+
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+	s, err := registerServer(instance, service, domain, port, text, ifaces)
+	if err != nil {
+		return nil, err
+	}
+	cx, cancelFn := context.WithCancel(context.Background())
+	s.cancelFunc = cancelFn
+	go s.mainloop(cx)
+	go s.probe(cx)
+	return s, nil
+}
+
+func registerServer(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -98,17 +129,11 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
 		return nil, fmt.Errorf("Could not determine host IP addresses")
 	}
-
 	s, err := newServer(ifaces)
 	if err != nil {
 		return nil, err
 	}
-	cx, cancelFn := context.WithCancel(context.Background())
-	s.cancelFunc = cancelFn
 	s.service = entry
-	go s.mainloop(cx)
-	go s.probe(cx)
-
 	return s, nil
 }
 
