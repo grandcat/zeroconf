@@ -1,19 +1,17 @@
 package zeroconf
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-
-	"errors"
 
 	"github.com/miekg/dns"
 )
@@ -23,9 +21,40 @@ const (
 	multicastRepitions = 2
 )
 
+type ZeroServer interface {
+	// SetText updates and announces the TXT records
+	SetText(text []string)
+	// TTL sets the TTL for DNS replies
+	TTL(ttl uint32)
+}
+
+// RegisterContext is like Register except it's being shutdown using the context cancelation
+// mechanism
+func RegisterContext(cx context.Context, instance, service, domain string, port int, text []string, ifaces []net.Interface) (ZeroServer, error) {
+	s, err := registerServer(instance, service, domain, port, text, ifaces)
+	if err != nil {
+		return nil, err
+	}
+	go s.mainloop(cx)
+	go s.probe(cx)
+	return s, nil
+}
+
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+	s, err := registerServer(instance, service, domain, port, text, ifaces)
+	if err != nil {
+		return nil, err
+	}
+	cx, cancelFn := context.WithCancel(context.Background())
+	s.cancelFunc = cancelFn
+	go s.mainloop(cx)
+	go s.probe(cx)
+	return s, nil
+}
+
+func registerServer(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -68,16 +97,11 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
 		return nil, fmt.Errorf("Could not determine host IP addresses")
 	}
-
 	s, err := newServer(ifaces)
 	if err != nil {
 		return nil, err
 	}
-
 	s.service = entry
-	go s.mainloop()
-	go s.probe()
-
 	return s, nil
 }
 
@@ -130,10 +154,11 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	if err != nil {
 		return nil, err
 	}
-
+	cx, cancelFn := context.WithCancel(context.Background())
+	s.cancelFunc = cancelFn
 	s.service = entry
-	go s.mainloop()
-	go s.probe()
+	go s.mainloop(cx)
+	go s.probe(cx)
 
 	return s, nil
 }
@@ -144,16 +169,12 @@ const (
 
 // Server structure encapsulates both IPv4/IPv6 UDP connections
 type Server struct {
-	service  *ServiceEntry
-	ipv4conn *ipv4.PacketConn
-	ipv6conn *ipv6.PacketConn
-	ifaces   []net.Interface
-
-	shouldShutdown chan struct{}
-	shutdownLock   sync.Mutex
-	shutdownEnd    sync.WaitGroup
-	isShutdown     bool
-	ttl            uint32
+	service    *ServiceEntry
+	ipv4conn   *ipv4.PacketConn
+	ipv6conn   *ipv6.PacketConn
+	ifaces     []net.Interface
+	ttl        uint32
+	cancelFunc context.CancelFunc
 }
 
 // Constructs server structure
@@ -172,29 +193,29 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 	}
 
 	s := &Server{
-		ipv4conn:       ipv4conn,
-		ipv6conn:       ipv6conn,
-		ifaces:         ifaces,
-		ttl:            3200,
-		shouldShutdown: make(chan struct{}),
+		ipv4conn: ipv4conn,
+		ipv6conn: ipv6conn,
+		ifaces:   ifaces,
+		ttl:      3200,
 	}
 
 	return s, nil
 }
 
 // Start listeners and waits for the shutdown signal from exit channel
-func (s *Server) mainloop() {
+func (s *Server) mainloop(cx context.Context) {
 	if s.ipv4conn != nil {
-		go s.recv4(s.ipv4conn)
+		go s.recv4(cx, s.ipv4conn)
 	}
 	if s.ipv6conn != nil {
-		go s.recv6(s.ipv6conn)
+		go s.recv6(cx, s.ipv6conn)
 	}
 }
 
 // Shutdown closes all udp connections and unregisters the service
-func (s *Server) Shutdown() {
-	s.shutdown()
+func (s *Server) Shutdown() error {
+	s.cancelFunc()
+	return s.shutdown()
 }
 
 // SetText updates and announces the TXT records
@@ -210,85 +231,67 @@ func (s *Server) TTL(ttl uint32) {
 
 // Shutdown server will close currently open connections & channel
 func (s *Server) shutdown() error {
-	s.shutdownLock.Lock()
-	defer s.shutdownLock.Unlock()
-	if s.isShutdown {
-		return errors.New("Server is already shutdown")
-	}
-
 	err := s.unregister()
 	if err != nil {
 		return err
 	}
-
-	close(s.shouldShutdown)
-
 	if s.ipv4conn != nil {
 		s.ipv4conn.Close()
 	}
 	if s.ipv6conn != nil {
 		s.ipv6conn.Close()
 	}
-
-	// Wait for connection and routines to be closed
-	s.shutdownEnd.Wait()
-	s.isShutdown = true
-
 	return nil
 }
 
 // recv is a long running routine to receive packets from an interface
-func (s *Server) recv4(c *ipv4.PacketConn) {
+func (s *Server) recv4(cx context.Context, c *ipv4.PacketConn) {
 	if c == nil {
 		return
 	}
 	buf := make([]byte, 65536)
-	s.shutdownEnd.Add(1)
-	defer s.shutdownEnd.Done()
 	for {
 		select {
-		case <-s.shouldShutdown:
+		case <-cx.Done():
 			return
 		default:
-			var ifIndex int
-			n, cm, from, err := c.ReadFrom(buf)
-			if err != nil {
-				continue
-			}
-			if cm != nil {
-				ifIndex = cm.IfIndex
-			}
-			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				// log.Printf("[ERR] zeroconf: failed to handle query v4: %v", err)
-			}
+		}
+		var ifIndex int
+		n, cm, from, err := c.ReadFrom(buf)
+		if err != nil {
+			continue
+		}
+		if cm != nil {
+			ifIndex = cm.IfIndex
+		}
+		if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
+			// log.Printf("[ERR] zeroconf: failed to handle query v4: %v", err)
 		}
 	}
 }
 
 // recv is a long running routine to receive packets from an interface
-func (s *Server) recv6(c *ipv6.PacketConn) {
+func (s *Server) recv6(cx context.Context, c *ipv6.PacketConn) {
 	if c == nil {
 		return
 	}
 	buf := make([]byte, 65536)
-	s.shutdownEnd.Add(1)
-	defer s.shutdownEnd.Done()
 	for {
 		select {
-		case <-s.shouldShutdown:
+		case <-cx.Done():
 			return
 		default:
-			var ifIndex int
-			n, cm, from, err := c.ReadFrom(buf)
-			if err != nil {
-				continue
-			}
-			if cm != nil {
-				ifIndex = cm.IfIndex
-			}
-			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				// log.Printf("[ERR] zeroconf: failed to handle query v6: %v", err)
-			}
+		}
+		var ifIndex int
+		n, cm, from, err := c.ReadFrom(buf)
+		if err != nil {
+			continue
+		}
+		if cm != nil {
+			ifIndex = cm.IfIndex
+		}
+		if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
+			// log.Printf("[ERR] zeroconf: failed to handle query v6: %v", err)
 		}
 	}
 }
@@ -508,7 +511,7 @@ func (s *Server) serviceTypeName(resp *dns.Msg, ttl uint32) {
 
 // Perform probing & announcement
 //TODO: implement a proper probing & conflict resolution
-func (s *Server) probe() {
+func (s *Server) probe(cx context.Context) {
 	q := new(dns.Msg)
 	q.SetQuestion(s.service.ServiceInstanceName(), dns.TypePTR)
 	q.RecursionDesired = false
@@ -539,6 +542,11 @@ func (s *Server) probe() {
 	randomizer := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for i := 0; i < multicastRepitions; i++ {
+		select {
+		case <-cx.Done():
+			return
+		default:
+		}
 		if err := s.multicastResponse(q, 0); err != nil {
 			log.Println("[ERR] zeroconf: failed to send probe:", err.Error())
 		}

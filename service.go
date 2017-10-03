@@ -16,6 +16,7 @@ type ServiceRecord struct {
 	serviceName         string
 	serviceInstanceName string
 	serviceTypeName     string
+	lk                  sync.Mutex
 }
 
 // ServiceName returns a complete service name (e.g. _foobar._tcp.local.), which is composed
@@ -27,6 +28,17 @@ func (s *ServiceRecord) ServiceName() string {
 // ServiceInstanceName returns a complete service instance name (e.g. MyDemo\ Service._foobar._tcp.local.),
 // which is composed from service instance name, service name and a domain.
 func (s *ServiceRecord) ServiceInstanceName() string {
+	s.lk.Lock()
+	defer s.lk.Unlock()
+	// If no instance name provided we cannot compose service instance name
+	if s.Instance == "" {
+		return ""
+	}
+	// If not cached - compose and cache
+	if s.serviceInstanceName == "" {
+		s.serviceInstanceName = fmt.Sprintf("%s.%s", trimDot(s.Instance), s.ServiceName())
+	}
+
 	return s.serviceInstanceName
 }
 
