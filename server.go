@@ -37,7 +37,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		return nil, fmt.Errorf("Missing service name")
 	}
 	if entry.Domain == "" {
-		entry.Domain = "local"
+		entry.Domain = "local."
 	}
 	if entry.Port == 0 {
 		return nil, fmt.Errorf("Missing port")
