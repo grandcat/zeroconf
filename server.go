@@ -391,7 +391,7 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 		}
 
 	case s.service.ServiceInstanceName():
-		s.composeLookupAnswers(resp, s.ttl, ifIndex)
+		s.composeLookupAnswers(resp, s.ttl, ifIndex, false)
 	}
 
 	return nil
@@ -432,10 +432,10 @@ func (s *Server) composeBrowsingAnswers(resp *dns.Msg, ifIndex int) {
 	}
 	resp.Extra = append(resp.Extra, srv, txt)
 
-	resp.Extra = s.appendAddrs(resp.Extra, s.ttl, ifIndex)
+	resp.Extra = s.appendAddrs(resp.Extra, s.ttl, ifIndex, false)
 }
 
-func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int) {
+func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int, flushCache bool) {
 	// From RFC6762
 	//    The most significant bit of the rrclass for a record in the Answer
 	//    Section of a response message is the Multicast DNS cache-flush bit
@@ -482,7 +482,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int) {
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
 
-	resp.Answer = s.appendAddrs(resp.Answer, ttl, ifIndex)
+	resp.Answer = s.appendAddrs(resp.Answer, ttl, ifIndex, flushCache)
 }
 
 func (s *Server) serviceTypeName(resp *dns.Msg, ttl uint32) {
@@ -559,7 +559,7 @@ func (s *Server) probe() {
 			// TODO: make response authoritative if we are the publisher
 			resp.Answer = []dns.RR{}
 			resp.Extra = []dns.RR{}
-			s.composeLookupAnswers(resp, s.ttl, intf.Index)
+			s.composeLookupAnswers(resp, s.ttl, intf.Index, true)
 			if err := s.multicastResponse(resp, intf.Index); err != nil {
 				log.Println("[ERR] zeroconf: failed to send announcement:", err.Error())
 			}
@@ -593,11 +593,11 @@ func (s *Server) unregister() error {
 	resp.MsgHdr.Response = true
 	resp.Answer = []dns.RR{}
 	resp.Extra = []dns.RR{}
-	s.composeLookupAnswers(resp, 0, 0)
+	s.composeLookupAnswers(resp, 0, 0, true)
 	return s.multicastResponse(resp, 0)
 }
 
-func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int) []dns.RR {
+func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int, flushCache bool) []dns.RR {
 	var v4, v6 []net.IP
 	iface, _ := net.InterfaceByIndex(ifIndex)
 	if iface != nil {
@@ -612,12 +612,16 @@ func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int) []dns.RR {
 		// and IP address changes.
 		ttl = 120
 	}
+	var cacheFlushBit uint16
+	if flushCache {
+		cacheFlushBit = qClassCacheFlush
+	}
 	for _, ipv4 := range v4 {
 		a := &dns.A{
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
+				Class:  dns.ClassINET | cacheFlushBit,
 				Ttl:    ttl,
 			},
 			A: ipv4,
@@ -629,7 +633,7 @@ func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int) []dns.RR {
 			Hdr: dns.RR_Header{
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeAAAA,
-				Class:  dns.ClassINET,
+				Class:  dns.ClassINET | cacheFlushBit,
 				Ttl:    ttl,
 			},
 			AAAA: ipv6,
