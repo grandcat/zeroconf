@@ -544,12 +544,6 @@ func (s *Server) probe() {
 		}
 		time.Sleep(time.Duration(randomizer.Intn(250)) * time.Millisecond)
 	}
-	resp := new(dns.Msg)
-	resp.MsgHdr.Response = true
-	// TODO: make response authoritative if we are the publisher
-	resp.Answer = []dns.RR{}
-	resp.Extra = []dns.RR{}
-	s.composeLookupAnswers(resp, s.ttl, 0)
 
 	// From RFC6762
 	//    The Multicast DNS responder MUST send at least two unsolicited
@@ -559,8 +553,16 @@ func (s *Server) probe() {
 	//    at least a factor of two with every response sent.
 	timeout := 1 * time.Second
 	for i := 0; i < multicastRepetitions; i++ {
-		if err := s.multicastResponse(resp, 0); err != nil {
-			log.Println("[ERR] zeroconf: failed to send announcement:", err.Error())
+		for _, intf := range s.ifaces {
+			resp := new(dns.Msg)
+			resp.MsgHdr.Response = true
+			// TODO: make response authoritative if we are the publisher
+			resp.Answer = []dns.RR{}
+			resp.Extra = []dns.RR{}
+			s.composeLookupAnswers(resp, s.ttl, intf.Index)
+			if err := s.multicastResponse(resp, intf.Index); err != nil {
+				log.Println("[ERR] zeroconf: failed to send announcement:", err.Error())
+			}
 		}
 		time.Sleep(timeout)
 		timeout *= 2
