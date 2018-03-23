@@ -709,7 +709,7 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 		} else {
 			for ifi := range s.ifaces {
 				wcm.IfIndex = s.ifaces[ifi].Index
-				s.ipv6conn.WriteTo(buf, &wcm, ipv4Addr)
+				s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 			}
 		}
 	}
