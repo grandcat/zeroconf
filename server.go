@@ -606,6 +606,12 @@ func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int) []dns.RR {
 		v4 = s.service.AddrIPv4
 		v6 = s.service.AddrIPv6
 	}
+	if ttl > 0 {
+		// RFC6762 Section 10 says A/AAAA records SHOULD
+		// use TTL of 120s, to account for network interface
+		// and IP address changes.
+		ttl = 120
+	}
 	for _, ipv4 := range v4 {
 		a := &dns.A{
 			Hdr: dns.RR_Header{
