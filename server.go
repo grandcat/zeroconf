@@ -694,8 +694,8 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 			wcm.IfIndex = ifIndex
 			s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 		} else {
-			for ifi := range s.ifaces {
-				wcm.IfIndex = s.ifaces[ifi].Index
+			for _, intf := range s.ifaces {
+				wcm.IfIndex = intf.Index
 				s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 			}
 		}
@@ -707,8 +707,8 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 			wcm.IfIndex = ifIndex
 			s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 		} else {
-			for ifi := range s.ifaces {
-				wcm.IfIndex = s.ifaces[ifi].Index
+			for _, intf := range s.ifaces {
+				wcm.IfIndex = intf.Index
 				s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 			}
 		}
