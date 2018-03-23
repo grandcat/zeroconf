@@ -20,7 +20,7 @@ import (
 
 const (
 	// Number of Multicast responses sent for a query message (default: 1 < x < 9)
-	multicastRepitions = 2
+	multicastRepetitions = 2
 )
 
 // Register a service by given arguments. This call will take the system's hostname
@@ -538,7 +538,7 @@ func (s *Server) probe() {
 
 	randomizer := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	for i := 0; i < multicastRepitions; i++ {
+	for i := 0; i < multicastRepetitions; i++ {
 		if err := s.multicastResponse(q, 0); err != nil {
 			log.Println("[ERR] zeroconf: failed to send probe:", err.Error())
 		}
@@ -558,7 +558,7 @@ func (s *Server) probe() {
 	//    provided that the interval between unsolicited responses increases by
 	//    at least a factor of two with every response sent.
 	timeout := 1 * time.Second
-	for i := 0; i < multicastRepitions; i++ {
+	for i := 0; i < multicastRepetitions; i++ {
 		if err := s.multicastResponse(resp, 0); err != nil {
 			log.Println("[ERR] zeroconf: failed to send announcement:", err.Error())
 		}
