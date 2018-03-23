@@ -432,7 +432,7 @@ func (s *Server) composeBrowsingAnswers(resp *dns.Msg, ifIndex int) {
 	}
 	resp.Extra = append(resp.Extra, srv, txt)
 
-	resp.Extra = s.appendAddrs(resp.Extra, ifIndex)
+	resp.Extra = s.appendAddrs(resp.Extra, s.ttl, ifIndex)
 }
 
 func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int) {
@@ -482,7 +482,7 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int) {
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
 
-	resp.Answer = s.appendAddrs(resp.Answer, ifIndex)
+	resp.Answer = s.appendAddrs(resp.Answer, ttl, ifIndex)
 }
 
 func (s *Server) serviceTypeName(resp *dns.Msg, ttl uint32) {
@@ -597,7 +597,7 @@ func (s *Server) unregister() error {
 	return s.multicastResponse(resp, 0)
 }
 
-func (s *Server) appendAddrs(list []dns.RR, ifIndex int) []dns.RR {
+func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int) []dns.RR {
 	var v4, v6 []net.IP
 	iface, _ := net.InterfaceByIndex(ifIndex)
 	if iface != nil {
@@ -612,7 +612,7 @@ func (s *Server) appendAddrs(list []dns.RR, ifIndex int) []dns.RR {
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
-				Ttl:    s.ttl,
+				Ttl:    ttl,
 			},
 			A: ipv4,
 		}
@@ -624,7 +624,7 @@ func (s *Server) appendAddrs(list []dns.RR, ifIndex int) []dns.RR {
 				Name:   s.service.HostName,
 				Rrtype: dns.TypeAAAA,
 				Class:  dns.ClassINET,
-				Ttl:    s.ttl,
+				Ttl:    ttl,
 			},
 			AAAA: ipv6,
 		}
