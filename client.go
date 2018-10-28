@@ -86,7 +86,7 @@ func NewResolver(options ...ClientOption) (*Resolver, error) {
 func (r *Resolver) Browse(ctx context.Context, service, domain string, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
 	if domain != "" {
-		params.Domain = domain
+		params.SetDomain(domain)
 	}
 	params.Entries = entries
 	ctx, cancel := context.WithCancel(ctx)
@@ -113,7 +113,7 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 	params := defaultParams(service)
 	params.Instance = instance
 	if domain != "" {
-		params.Domain = domain
+		params.SetDomain(domain)
 	}
 	params.Entries = entries
 	ctx, cancel := context.WithCancel(ctx)
