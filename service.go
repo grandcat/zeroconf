@@ -8,9 +8,10 @@ import (
 
 // ServiceRecord contains the basic description of a service, which contains instance name, service type & domain
 type ServiceRecord struct {
-	Instance string `json:"name"`   // Instance name (e.g. "My web page")
-	Service  string `json:"type"`   // Service name (e.g. _http._tcp.)
-	Domain   string `json:"domain"` // If blank, assumes "local"
+	Instance string   `json:"name"`     // Instance name (e.g. "My web page")
+	Service  string   `json:"type"`     // Service name (e.g. _http._tcp.)
+	Subtypes []string `json:"subtypes"` // Service subtypes
+	Domain   string   `json:"domain"`   // If blank, assumes "local"
 
 	// private variable populated on ServiceRecord creation
 	serviceName         string
@@ -36,10 +37,11 @@ func (s *ServiceRecord) ServiceTypeName() string {
 }
 
 // NewServiceRecord constructs a ServiceRecord.
-func NewServiceRecord(instance, service, domain string) *ServiceRecord {
+func NewServiceRecord(instance, service string, subtypes []string, domain string) *ServiceRecord {
 	s := &ServiceRecord{
 		Instance:    instance,
 		Service:     service,
+		Subtypes:    subtypes,
 		Domain:      domain,
 		serviceName: fmt.Sprintf("%s.%s.", trimDot(service), trimDot(domain)),
 	}
@@ -70,8 +72,9 @@ type LookupParams struct {
 
 // NewLookupParams constructs a LookupParams.
 func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *LookupParams {
+	service, subtypes := parseSubtypes(service)
 	return &LookupParams{
-		ServiceRecord: *NewServiceRecord(instance, service, domain),
+		ServiceRecord: *NewServiceRecord(instance, service, subtypes, domain),
 		Entries:       entries,
 
 		stopProbing: make(chan struct{}),
@@ -102,8 +105,8 @@ type ServiceEntry struct {
 }
 
 // NewServiceEntry constructs a ServiceEntry.
-func NewServiceEntry(instance, service, domain string) *ServiceEntry {
+func NewServiceEntry(instance, service string, subtypes []string, domain string) *ServiceEntry {
 	return &ServiceEntry{
-		ServiceRecord: *NewServiceRecord(instance, service, domain),
+		ServiceRecord: *NewServiceRecord(instance, service, subtypes, domain),
 	}
 }
