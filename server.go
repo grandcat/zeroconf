@@ -23,6 +23,24 @@ const (
 	multicastRepetitions = 2
 )
 
+// Register a service from a given ServiceEntry.
+func RegisterSvcEntry(entry *ServiceEntry, ifaces []net.Interface) (*Server, error) {
+	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
+		return nil, fmt.Errorf("Could not determine host IP addresses")
+	}
+
+	s, err := newServer(ifaces)
+	if err != nil {
+		return nil, err
+	}
+
+	s.service = entry
+	go s.mainloop()
+	go s.probe()
+
+	return s, nil
+}
+
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
