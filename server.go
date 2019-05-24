@@ -378,21 +378,27 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 		return nil
 	}
 
-	switch q.Name {
-	case s.service.ServiceTypeName():
-		s.serviceTypeName(resp, s.ttl)
-		if isKnownAnswer(resp, query) {
-			resp.Answer = nil
+	if q.Qtype == dns.TypeA || q.Qtype == dns.TypeAAAA {
+		if q.Name == s.service.HostName {
+			resp.Answer = s.appendAddrs(resp.Answer, s.ttl, ifIndex, false)
 		}
+	} else {
+		switch q.Name {
+		case s.service.ServiceTypeName():
+			s.serviceTypeName(resp, s.ttl)
+			if isKnownAnswer(resp, query) {
+				resp.Answer = nil
+			}
 
-	case s.service.ServiceName():
-		s.composeBrowsingAnswers(resp, ifIndex)
-		if isKnownAnswer(resp, query) {
-			resp.Answer = nil
+		case s.service.ServiceName():
+			s.composeBrowsingAnswers(resp, ifIndex)
+			if isKnownAnswer(resp, query) {
+				resp.Answer = nil
+			}
+
+		case s.service.ServiceInstanceName():
+			s.composeLookupAnswers(resp, s.ttl, ifIndex, false)
 		}
-
-	case s.service.ServiceInstanceName():
-		s.composeLookupAnswers(resp, s.ttl, ifIndex, false)
 	}
 
 	return nil
