@@ -27,7 +27,11 @@ func main() {
 	entries := make(chan *zeroconf.ServiceEntry)
 	go func(results <-chan *zeroconf.ServiceEntry) {
 		for entry := range results {
-			log.Println(entry)
+			if entry.TTL>0 {
+				log.Println("[+]", entry)
+			} else {
+				log.Println("[-]", entry)
+			}
 		}
 		log.Println("No more entries.")
 	}(entries)
