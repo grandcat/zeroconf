@@ -10,7 +10,7 @@ in the local network.
 It basically implements aspects of the standards
 [RFC 6762](https://tools.ietf.org/html/rfc6762) (mDNS) and
 [RFC 6763](https://tools.ietf.org/html/rfc6763) (DNS-SD).
-Though it does not support all requirements yet, the aim is to provide a complient solution in the long-term with the community.
+Though it does not support all requirements yet, the aim is to provide a compliant solution in the long-term with the community.
 
 By now, it should be compatible to [Avahi](http://avahi.org/) (tested) and Apple's Bonjour (untested).
 Target environments: private LAN/Wifi, small or isolated networks.
@@ -95,8 +95,8 @@ See what needs to be done and submit a pull request :)
 
 _Notes:_
 
-(*) The denoted functionalities might not be 100% standard conform, but should not be a deal breaker.
-    Some test scenarios demonstrated that the overall robustness and performance increases when applying the suggested improvements.
+(*) The denoted features might not be perfectly standards compliant, but shouldn't cause any problems.
+    Some tests showed improvements in overall robustness and performance with the features enabled.
 
 ## Credits
 Great thanks to [hashicorp](https://github.com/hashicorp/mdns) and to [oleksandr](https://github.com/oleksandr/bonjour) and all contributing authors for the code this projects bases upon.
