@@ -217,6 +217,7 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 						entries[rr.Ptr] = NewServiceEntry(
 							trimDot(strings.Replace(rr.Ptr, rr.Hdr.Name, "", -1)),
 							params.Service,
+							params.Subtypes,
 							params.Domain)
 					}
 					entries[rr.Ptr].TTL = rr.Hdr.Ttl
@@ -230,6 +231,7 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 						entries[rr.Hdr.Name] = NewServiceEntry(
 							trimDot(strings.Replace(rr.Hdr.Name, params.ServiceName(), "", 1)),
 							params.Service,
+							params.Subtypes,
 							params.Domain)
 					}
 					entries[rr.Hdr.Name].HostName = rr.Target
@@ -245,6 +247,7 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 						entries[rr.Hdr.Name] = NewServiceEntry(
 							trimDot(strings.Replace(rr.Hdr.Name, params.ServiceName(), "", 1)),
 							params.Service,
+							params.Subtypes,
 							params.Domain)
 					}
 					entries[rr.Hdr.Name].Text = rr.Txt
@@ -409,6 +412,10 @@ func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error 
 func (c *client) query(params *LookupParams) error {
 	var serviceName, serviceInstanceName string
 	serviceName = fmt.Sprintf("%s.%s.", trimDot(params.Service), trimDot(params.Domain))
+	if len(params.Subtypes) > 0 {
+		serviceName = fmt.Sprintf("%s._sub.%s", params.Subtypes[0], serviceName)
+	}
+
 	if params.Instance != "" {
 		serviceInstanceName = fmt.Sprintf("%s.%s", params.Instance, serviceName)
 	}
