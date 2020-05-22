@@ -52,6 +52,8 @@ if err != nil {
 
 <-ctx.Done()
 ```
+A subtype may added to service name to narrow the set of results. E.g. to browse `_workstation._tcp` with subtype `_windows`, use`_workstation._tcp,_windows`.
+
 See https://github.com/grandcat/zeroconf/blob/master/examples/resolv/client.go.
 
 ## Lookup a specific service instance
@@ -81,6 +83,8 @@ case <-time.After(time.Second * 120):
 
 log.Println("Shutting down.")
 ```
+Multiple subtypes may be added to service name, separated by commas. E.g `_workstation._tcp,_windows` has subtype `_windows`.
+
 See https://github.com/grandcat/zeroconf/blob/master/examples/register/server.go.
 
 ## Features and ToDo's

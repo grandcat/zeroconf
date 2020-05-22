@@ -37,13 +37,17 @@ func (s *ServiceRecord) ServiceTypeName() string {
 }
 
 // NewServiceRecord constructs a ServiceRecord.
-func NewServiceRecord(instance, service string, subtypes []string, domain string) *ServiceRecord {
+func NewServiceRecord(instance, service string, domain string) *ServiceRecord {
+	service, subtypes := parseSubtypes(service)
 	s := &ServiceRecord{
 		Instance:    instance,
 		Service:     service,
-		Subtypes:    subtypes,
 		Domain:      domain,
 		serviceName: fmt.Sprintf("%s.%s.", trimDot(service), trimDot(domain)),
+	}
+
+	for _, subtype := range subtypes {
+		s.Subtypes = append(s.Subtypes, fmt.Sprintf("%s._sub.%s", trimDot(subtype), s.serviceName))
 	}
 
 	// Cache service instance name
@@ -72,9 +76,8 @@ type LookupParams struct {
 
 // NewLookupParams constructs a LookupParams.
 func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *LookupParams {
-	service, subtypes := parseSubtypes(service)
 	return &LookupParams{
-		ServiceRecord: *NewServiceRecord(instance, service, subtypes, domain),
+		ServiceRecord: *NewServiceRecord(instance, service, domain),
 		Entries:       entries,
 
 		stopProbing: make(chan struct{}),
@@ -105,8 +108,8 @@ type ServiceEntry struct {
 }
 
 // NewServiceEntry constructs a ServiceEntry.
-func NewServiceEntry(instance, service string, subtypes []string, domain string) *ServiceEntry {
+func NewServiceEntry(instance, service string, domain string) *ServiceEntry {
 	return &ServiceEntry{
-		ServiceRecord: *NewServiceRecord(instance, service, subtypes, domain),
+		ServiceRecord: *NewServiceRecord(instance, service, domain),
 	}
 }

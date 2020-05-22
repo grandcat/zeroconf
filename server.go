@@ -1,6 +1,7 @@
 package zeroconf
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -10,12 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miekg/dns"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-
-	"errors"
-
-	"github.com/miekg/dns"
 )
 
 const (
@@ -26,8 +24,7 @@ const (
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
-	service, subtypes := parseSubtypes(service)
-	entry := NewServiceEntry(instance, service, subtypes, domain)
+	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
 
@@ -85,8 +82,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 // RegisterProxy registers a service proxy. This call will skip the hostname/IP lookup and
 // will use the provided values.
 func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface) (*Server, error) {
-	service, subtypes := parseSubtypes(service)
-	entry := NewServiceEntry(instance, service, subtypes, domain)
+	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
 	entry.HostName = host
@@ -496,6 +492,19 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int, fl
 		Ptr: s.service.ServiceName(),
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
+
+	for _, subtype := range s.service.Subtypes {
+		resp.Answer = append(resp.Answer,
+			&dns.PTR{
+				Hdr: dns.RR_Header{
+					Name:   subtype,
+					Rrtype: dns.TypePTR,
+					Class:  dns.ClassINET,
+					Ttl:    ttl,
+				},
+				Ptr: s.service.ServiceInstanceName(),
+			})
+	}
 
 	resp.Answer = s.appendAddrs(resp.Answer, ttl, ifIndex, flushCache)
 }
