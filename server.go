@@ -1,6 +1,7 @@
 package zeroconf
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -10,12 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/miekg/dns"
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
-
-	"errors"
-
-	"github.com/miekg/dns"
 )
 
 const (
@@ -393,6 +391,18 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 
 	case s.service.ServiceInstanceName():
 		s.composeLookupAnswers(resp, s.ttl, ifIndex, false)
+	default:
+		// handle matching subtype query
+		for _, subtype := range s.service.Subtypes {
+			subtype = fmt.Sprintf("%s._sub.%s", subtype, s.service.ServiceName())
+			if q.Name == subtype {
+				s.composeBrowsingAnswers(resp, ifIndex)
+				if isKnownAnswer(resp, query) {
+					resp.Answer = nil
+				}
+				break
+			}
+		}
 	}
 
 	return nil
@@ -482,6 +492,19 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int, fl
 		Ptr: s.service.ServiceName(),
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
+
+	for _, subtype := range s.service.Subtypes {
+		resp.Answer = append(resp.Answer,
+			&dns.PTR{
+				Hdr: dns.RR_Header{
+					Name:   subtype,
+					Rrtype: dns.TypePTR,
+					Class:  dns.ClassINET,
+					Ttl:    ttl,
+				},
+				Ptr: s.service.ServiceInstanceName(),
+			})
+	}
 
 	resp.Answer = s.appendAddrs(resp.Answer, ttl, ifIndex, flushCache)
 }

@@ -8,9 +8,10 @@ import (
 
 // ServiceRecord contains the basic description of a service, which contains instance name, service type & domain
 type ServiceRecord struct {
-	Instance string `json:"name"`   // Instance name (e.g. "My web page")
-	Service  string `json:"type"`   // Service name (e.g. _http._tcp.)
-	Domain   string `json:"domain"` // If blank, assumes "local"
+	Instance string   `json:"name"`     // Instance name (e.g. "My web page")
+	Service  string   `json:"type"`     // Service name (e.g. _http._tcp.)
+	Subtypes []string `json:"subtypes"` // Service subtypes
+	Domain   string   `json:"domain"`   // If blank, assumes "local"
 
 	// private variable populated on ServiceRecord creation
 	serviceName         string
@@ -36,12 +37,17 @@ func (s *ServiceRecord) ServiceTypeName() string {
 }
 
 // NewServiceRecord constructs a ServiceRecord.
-func NewServiceRecord(instance, service, domain string) *ServiceRecord {
+func NewServiceRecord(instance, service string, domain string) *ServiceRecord {
+	service, subtypes := parseSubtypes(service)
 	s := &ServiceRecord{
 		Instance:    instance,
 		Service:     service,
 		Domain:      domain,
 		serviceName: fmt.Sprintf("%s.%s.", trimDot(service), trimDot(domain)),
+	}
+
+	for _, subtype := range subtypes {
+		s.Subtypes = append(s.Subtypes, fmt.Sprintf("%s._sub.%s", trimDot(subtype), s.serviceName))
 	}
 
 	// Cache service instance name
@@ -102,7 +108,7 @@ type ServiceEntry struct {
 }
 
 // NewServiceEntry constructs a ServiceEntry.
-func NewServiceEntry(instance, service, domain string) *ServiceEntry {
+func NewServiceEntry(instance, service string, domain string) *ServiceEntry {
 	return &ServiceEntry{
 		ServiceRecord: *NewServiceRecord(instance, service, domain),
 	}

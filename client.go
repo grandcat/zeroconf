@@ -5,14 +5,12 @@ import (
 	"fmt"
 	"net"
 	"strings"
-
-	"golang.org/x/net/ipv4"
-	"golang.org/x/net/ipv6"
-
 	"time"
 
 	"github.com/cenkalti/backoff"
 	"github.com/miekg/dns"
+	"golang.org/x/net/ipv4"
+	"golang.org/x/net/ipv6"
 )
 
 // IPType specifies the IP traffic the client listens for.
@@ -409,22 +407,21 @@ func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error 
 func (c *client) query(params *LookupParams) error {
 	var serviceName, serviceInstanceName string
 	serviceName = fmt.Sprintf("%s.%s.", trimDot(params.Service), trimDot(params.Domain))
-	if params.Instance != "" {
-		serviceInstanceName = fmt.Sprintf("%s.%s", params.Instance, serviceName)
-	}
 
 	// send the query
 	m := new(dns.Msg)
-	if serviceInstanceName != "" {
+	if params.Instance != "" { // service instance name lookup
+		serviceInstanceName = fmt.Sprintf("%s.%s", params.Instance, serviceName)
 		m.Question = []dns.Question{
 			dns.Question{serviceInstanceName, dns.TypeSRV, dns.ClassINET},
 			dns.Question{serviceInstanceName, dns.TypeTXT, dns.ClassINET},
 		}
-		m.RecursionDesired = false
-	} else {
+	} else if len(params.Subtypes) > 0 { // service subtype browse
+		m.SetQuestion(params.Subtypes[0], dns.TypePTR)
+	} else { // service name browse
 		m.SetQuestion(serviceName, dns.TypePTR)
-		m.RecursionDesired = false
 	}
+	m.RecursionDesired = false
 	if err := c.sendQuery(m); err != nil {
 		return err
 	}
