@@ -215,9 +215,6 @@ func (s *Server) shutdown() error {
 	}
 
 	err := s.unregister()
-	if err != nil {
-		return err
-	}
 
 	close(s.shouldShutdown)
 
@@ -232,7 +229,7 @@ func (s *Server) shutdown() error {
 	s.shutdownEnd.Wait()
 	s.isShutdown = true
 
-	return nil
+	return err
 }
 
 // recv is a long running routine to receive packets from an interface
