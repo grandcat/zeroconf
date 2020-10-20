@@ -190,6 +190,7 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 	// Iterate through channels from listeners goroutines
 	var entries, sentEntries map[string]*ServiceEntry
 	sentEntries = make(map[string]*ServiceEntry)
+	ttlTime := make(map[string]int64)
 	for {
 		select {
 		case <-ctx.Done():
@@ -273,9 +274,12 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 				if e.TTL == 0 {
 					delete(entries, k)
 					delete(sentEntries, k)
+					delete(ttlTime, k)
 					continue
 				}
-				if _, ok := sentEntries[k]; ok {
+				se, ok := sentEntries[k]
+				exp, ok2 := ttlTime[k]
+				if ok && ok2 && se.isEqual(e) && !se.nearToExpire(exp) {
 					continue
 				}
 
@@ -293,7 +297,8 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 				// service entry.
 				params.Entries <- e
 				sentEntries[k] = e
-				params.disableProbing()
+				ttlTime[k] = time.Now().Unix()
+				//params.disableProbing()
 			}
 			// reset entries
 			entries = make(map[string]*ServiceEntry)

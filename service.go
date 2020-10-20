@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 )
 
 // ServiceRecord contains the basic description of a service, which contains instance name, service type & domain
@@ -112,4 +113,69 @@ func NewServiceEntry(instance, service string, domain string) *ServiceEntry {
 	return &ServiceEntry{
 		ServiceRecord: *NewServiceRecord(instance, service, domain),
 	}
+}
+
+func (se *ServiceEntry) nearToExpire(exp int64) bool {
+	now := time.Now().Unix()
+	if now-exp > (int64)(se.TTL/2) {
+		return true
+	}
+	return false
+}
+
+func (se *ServiceEntry) isEqual(other *ServiceEntry) bool {
+	if se.HostName != other.HostName {
+		return false
+	}
+	if se.Port != other.Port {
+		return false
+	}
+	if !textSliceAreEqual(se.Text, other.Text) {
+		return false
+	}
+	if !ipSlicesAreEqual(se.AddrIPv4, other.AddrIPv4) {
+		return false
+	}
+	if !ipSlicesAreEqual(se.AddrIPv6, other.AddrIPv6) {
+		return false
+	}
+	return true
+}
+
+func ipSlicesAreEqual(ipl1 []net.IP, ipl2 []net.IP) bool {
+	if len(ipl1) != len(ipl2) {
+		return false
+	}
+	for _, s := range ipl1 {
+		contains := false
+		for _, s2 := range ipl2 {
+			if s.Equal(s2) {
+				contains = true
+				break
+			}
+		}
+		if !contains {
+			return false
+		}
+	}
+	return true
+}
+
+func textSliceAreEqual(tl1 []string, tl2 []string) bool {
+	if len(tl1) != len(tl2) {
+		return false
+	}
+	for _, s := range tl1 {
+		contains := false
+		for _, s2 := range tl2 {
+			if s == s2 {
+				contains = true
+				break
+			}
+		}
+		if !contains {
+			return false
+		}
+	}
+	return true
 }

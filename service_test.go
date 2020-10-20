@@ -19,7 +19,7 @@ var (
 
 func startMDNS(ctx context.Context, port int, name, service, domain string) {
 	// 5353 is default mdns port
-	server, err := Register(name, service, domain, port, []string{"txtv=0", "lo=1", "la=2"}, nil)
+	server, err := Register(name, service, domain, port, []string{"txtv=0", "lo=1", "la=2"}, nil, 60)
 	if err != nil {
 		panic(errors.Wrap(err, "while registering mdns service"))
 	}
