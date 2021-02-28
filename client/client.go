@@ -69,6 +69,10 @@ func New(ctx context.Context, lgr log.Logger, cfg Config) (*Client, error) {
 		}
 	}
 
+	if ipv6conn == nil && ipv4conn == nil {
+		return nil, errors.New("no connections enabled from the config - ip4 or ip6 should be anabled")
+	}
+
 	ctx, close := context.WithCancel(ctx)
 
 	return &Client{
