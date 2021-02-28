@@ -59,19 +59,22 @@ func (self *IPType) UnmarshalJSON(b []byte) error {
 		switch value {
 		case "IPv4":
 			i := IPType(IPv4)
-			self = &i
+			*self = i
 		case "IPv6":
 			i := IPType(IPv6)
-			self = &i
+			*self = i
 		case "IPv4AndIPv6":
 			i := IPType(IPv4AndIPv6)
-			self = &i
+			*self = i
 		default:
 			return errors.Errorf("invalid ip selection:%v", value)
 		}
+	case float64:
+		i := IPType(value)
+		*self = i
 	case int:
 		i := IPType(value)
-		self = &i
+		*self = i
 	}
 	return nil
 }
