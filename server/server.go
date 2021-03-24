@@ -156,6 +156,7 @@ func (self *Server) Stop() {
 			level.Error(self.logger).Log("msg", "closing ipv6conn", "err", err)
 		}
 	}
+	level.Info(self.logger).Log("msg", "stopped")
 }
 
 // recv4 is a long running routine to receive packets from an interface

@@ -305,4 +305,5 @@ func (self *Client) Stop() {
 	if self.ipv6conn != nil {
 		level.Error(self.logger).Log("msg", "closing ipv6conn", "err", err)
 	}
+	level.Info(self.logger).Log("msg", "stopped")
 }
