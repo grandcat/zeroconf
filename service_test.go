@@ -2,6 +2,7 @@ package zeroconf
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -81,10 +82,11 @@ func TestNoRegister(t *testing.T) {
 
 	// before register, mdns resolve should not have any entry
 	entries := make(chan *ServiceEntry)
+	var resultError error
 	go func(results <-chan *ServiceEntry) {
 		s := <-results
 		if s != nil {
-			t.Fatalf("Expected empty service entries but got %v", *s)
+			resultError = fmt.Errorf("Expected empty service entries but got %v", *s)
 		}
 	}(entries)
 
@@ -94,6 +96,9 @@ func TestNoRegister(t *testing.T) {
 	}
 	<-ctx.Done()
 	cancel()
+	if resultError != nil {
+		t.Fatal(resultError)
+	}
 }
 
 func TestSubtype(t *testing.T) {
