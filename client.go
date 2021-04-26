@@ -14,7 +14,7 @@ import (
 )
 
 // IPType specifies the IP traffic the client listens for.
-// This does not guarantee that only mDNS entries of this sepcific
+// This does not guarantee that only mDNS entries of this specific
 // type passes. E.g. typical mDNS packets distributed via IPv4, often contain
 // both DNS A and AAAA entries.
 type IPType uint8
@@ -31,12 +31,12 @@ type clientOpts struct {
 	ifaces   []net.Interface
 }
 
-// ClientOption fills the option struct to configure intefaces, etc.
+// ClientOption fills the option struct to configure interfaces, etc.
 type ClientOption func(*clientOpts)
 
 // SelectIPTraffic selects the type of IP packets (IPv4, IPv6, or both) this
 // instance listens for.
-// This does not guarantee that only mDNS entries of this sepcific
+// This does not guarantee that only mDNS entries of this specific
 // type passes. E.g. typical mDNS packets distributed via IPv4, may contain
 // both DNS A and AAAA entries.
 func SelectIPTraffic(t IPType) ClientOption {

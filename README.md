@@ -13,7 +13,7 @@ It basically implements aspects of the standards
 Though it does not support all requirements yet, the aim is to provide a compliant solution in the long-term with the community.
 
 By now, it should be compatible to [Avahi](http://avahi.org/) (tested) and Apple's Bonjour (untested).
-Target environments: private LAN/Wifi, small or isolated networks.
+Target environments: private LAN/WiFi, small or isolated networks.
 
 [![GoDoc](https://godoc.org/github.com/grandcat/zeroconf?status.svg)](https://godoc.org/github.com/grandcat/zeroconf)
 [![Go Report Card](https://goreportcard.com/badge/github.com/grandcat/zeroconf)](https://goreportcard.com/report/github.com/grandcat/zeroconf)
@@ -108,6 +108,6 @@ Large parts of the code are still the same.
 
 However, there are several reasons why I decided to create a fork of the original project:
 The previous project seems to be unmaintained. There are several useful pull requests waiting. I merged most of them in this project.
-Still, the implementation has some bugs and lacks some other features that make it quite unreliable in real LAN environments when running continously.
+Still, the implementation has some bugs and lacks some other features that make it quite unreliable in real LAN environments when running continuously.
 Last but not least, the aim for this project is to build a solution that targets standard conformance in the long term with the support of the community.
 Though, resiliency should remain a top goal.

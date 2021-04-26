@@ -331,7 +331,7 @@ func (s *Server) handleQuery(query *dns.Msg, ifIndex int, from net.Addr) error {
 				err = e
 			}
 		} else {
-			// Send mulicast
+			// Send multicast
 			if e := s.multicastResponse(&resp, ifIndex); e != nil {
 				err = e
 			}
