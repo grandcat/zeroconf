@@ -1,6 +1,5 @@
 # ZeroConf: Service Discovery with mDNS
 
-=====================================
 ZeroConf is a pure Golang library that employs Multicast DNS-SD for
 
 * browsing and resolving services in your network
