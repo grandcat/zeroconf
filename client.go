@@ -295,8 +295,6 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 				sentEntries[k] = e
 				params.disableProbing()
 			}
-			// reset entries
-			entries = make(map[string]*ServiceEntry)
 		}
 	}
 }
@@ -413,8 +411,8 @@ func (c *client) query(params *LookupParams) error {
 	if params.Instance != "" { // service instance name lookup
 		serviceInstanceName = fmt.Sprintf("%s.%s", params.Instance, serviceName)
 		m.Question = []dns.Question{
-			dns.Question{serviceInstanceName, dns.TypeSRV, dns.ClassINET},
-			dns.Question{serviceInstanceName, dns.TypeTXT, dns.ClassINET},
+			{Name: serviceInstanceName, Qtype: dns.TypeSRV, Qclass: dns.ClassINET},
+			{Name: serviceInstanceName, Qtype: dns.TypeTXT, Qclass: dns.ClassINET},
 		}
 	} else if len(params.Subtypes) > 0 { // service subtype browse
 		m.SetQuestion(params.Subtypes[0], dns.TypePTR)
