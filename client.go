@@ -436,15 +436,19 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 	if c.ipv4conn != nil {
 		var wcm ipv4.ControlMessage
 		for ifi := range c.ifaces {
-			wcm.IfIndex = c.ifaces[ifi].Index
-			c.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
+			if c.ifaces[ifi].Flags&net.FlagUp != 0 {
+				wcm.IfIndex = c.ifaces[ifi].Index
+				c.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
+			}
 		}
 	}
 	if c.ipv6conn != nil {
 		var wcm ipv6.ControlMessage
 		for ifi := range c.ifaces {
-			wcm.IfIndex = c.ifaces[ifi].Index
-			c.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
+			if c.ifaces[ifi].Flags&net.FlagUp != 0 {
+				wcm.IfIndex = c.ifaces[ifi].Index
+				c.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
+			}
 		}
 	}
 	return nil

@@ -24,13 +24,16 @@ func startMDNS(ctx context.Context, port int, name, service, domain string) {
 	if err != nil {
 		panic(errors.Wrap(err, "while registering mdns service"))
 	}
-	defer server.Shutdown()
+	defer func() {
+		if err := server.Shutdown(); err != nil {
+			panic(errors.Wrap(err, "while shutting mdns service"))
+		}
+	}()
 	log.Printf("Published service: %s, type: %s, domain: %s", name, service, domain)
 
 	<-ctx.Done()
 
 	log.Printf("Shutting down.")
-
 }
 
 func TestBasic(t *testing.T) {
