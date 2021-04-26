@@ -1,4 +1,5 @@
-ZeroConf: Service Discovery with mDNS
+# ZeroConf: Service Discovery with mDNS
+
 =====================================
 ZeroConf is a pure Golang library that employs Multicast DNS-SD for
 
@@ -20,10 +21,13 @@ Target environments: private LAN/WiFi, small or isolated networks.
 [![Build Status](https://travis-ci.com/grandcat/zeroconf.svg?branch=master)](https://travis-ci.com/grandcat/zeroconf)
 
 ## Install
+
 Nothing is as easy as that:
+
 ```bash
-$ go get -u github.com/grandcat/zeroconf
+go get -u github.com/grandcat/zeroconf
 ```
+
 This package requires **Go 1.7** (context in std lib) or later.
 
 ## Browse for services in your local network
@@ -52,9 +56,10 @@ if err != nil {
 
 <-ctx.Done()
 ```
+
 A subtype may added to service name to narrow the set of results. E.g. to browse `_workstation._tcp` with subtype `_windows`, use`_workstation._tcp,_windows`.
 
-See https://github.com/grandcat/zeroconf/blob/master/examples/resolv/client.go.
+See [examples/resolv/client.go](examples/resolv/client.go).
 
 ## Lookup a specific service instance
 
@@ -83,11 +88,13 @@ case <-time.After(time.Second * 120):
 
 log.Println("Shutting down.")
 ```
+
 Multiple subtypes may be added to service name, separated by commas. E.g `_workstation._tcp,_windows` has subtype `_windows`.
 
-See https://github.com/grandcat/zeroconf/blob/master/examples/register/server.go.
+See [examples/register/server.go](examples/register/server.go).
 
 ## Features and ToDo's
+
 This list gives a quick impression about the state of this library.
 See what needs to be done and submit a pull request :)
 
@@ -103,6 +110,7 @@ _Notes:_
     Some tests showed improvements in overall robustness and performance with the features enabled.
 
 ## Credits
+
 Great thanks to [hashicorp](https://github.com/hashicorp/mdns) and to [oleksandr](https://github.com/oleksandr/bonjour) and all contributing authors for the code this projects bases upon.
 Large parts of the code are still the same.
 
