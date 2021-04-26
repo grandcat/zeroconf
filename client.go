@@ -154,7 +154,7 @@ func newClient(opts clientOpts) (*client, error) {
 	var ipv4conn *ipv4.PacketConn
 	if (opts.listenOn & IPv4) > 0 {
 		var err error
-		ipv4conn, err = joinUdp4Multicast(ifaces)
+		ipv4conn, err = joinUDP4Multicast(ifaces)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +163,7 @@ func newClient(opts clientOpts) (*client, error) {
 	var ipv6conn *ipv6.PacketConn
 	if (opts.listenOn & IPv6) > 0 {
 		var err error
-		ipv6conn, err = joinUdp6Multicast(ifaces)
+		ipv6conn, err = joinUDP6Multicast(ifaces)
 		if err != nil {
 			return nil, err
 		}

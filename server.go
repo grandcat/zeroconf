@@ -156,11 +156,11 @@ type Server struct {
 
 // Constructs server structure
 func newServer(ifaces []net.Interface) (*Server, error) {
-	ipv4conn, err4 := joinUdp4Multicast(ifaces)
+	ipv4conn, err4 := joinUDP4Multicast(ifaces)
 	if err4 != nil {
 		log.Printf("[zeroconf] no suitable IPv4 interface: %s", err4.Error())
 	}
-	ipv6conn, err6 := joinUdp6Multicast(ifaces)
+	ipv6conn, err6 := joinUDP6Multicast(ifaces)
 	if err6 != nil {
 		log.Printf("[zeroconf] no suitable IPv6 interface: %s", err6.Error())
 	}
@@ -706,16 +706,16 @@ func (s *Server) unicastResponse(resp *dns.Msg, ifIndex int, from net.Addr) erro
 			_, err = s.ipv4conn.WriteTo(buf, nil, addr)
 		}
 		return err
-	} else {
-		if ifIndex != 0 {
-			var wcm ipv6.ControlMessage
-			wcm.IfIndex = ifIndex
-			_, err = s.ipv6conn.WriteTo(buf, &wcm, addr)
-		} else {
-			_, err = s.ipv6conn.WriteTo(buf, nil, addr)
-		}
-		return err
 	}
+	if ifIndex != 0 {
+		var wcm ipv6.ControlMessage
+		wcm.IfIndex = ifIndex
+		_, err = s.ipv6conn.WriteTo(buf, &wcm, addr)
+	} else {
+		_, err = s.ipv6conn.WriteTo(buf, nil, addr)
+	}
+	return err
+
 }
 
 // multicastResponse us used to send a multicast response packet
