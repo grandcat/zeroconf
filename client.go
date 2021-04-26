@@ -161,6 +161,32 @@ func (r *Resolver) Resolve(ctx context.Context, name string, qType uint16, entri
 	return nil
 }
 
+// ResolveOnce like Resolve, but returns on the first response, which is usually expected if only one host on the network has a given name
+func (r *Resolver) ResolveOnce(ctx context.Context, name string, qType uint16) ([]net.IP, error) {
+	localCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ip := make([]net.IP, 0, 1)
+
+	entries := make(chan *ServiceEntry)
+	go func(results <-chan *ServiceEntry) {
+		for entry := range results {
+			if name == entry.HostName {
+				ip = append(ip, entry.AddrIPv4...)
+				ip = append(ip, entry.AddrIPv6...)
+				cancel() // limits this resolve to a single response.
+			}
+		}
+	}(entries)
+
+	err := r.Resolve(localCtx, name, qType, entries)
+	if err != nil {
+		return nil, err
+	}
+
+	<-ctx.Done()
+	return ip, nil
+}
+
 // defaultParams returns a default set of QueryParams.
 func defaultParams(service string) *LookupParams {
 	return NewLookupParams("", service, "local", make(chan *ServiceEntry))
