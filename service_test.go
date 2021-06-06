@@ -152,10 +152,16 @@ func TestSubtype(t *testing.T) {
 		}
 		entries := make(chan *ServiceEntry)
 		var expectedResult []*ServiceEntry
-		go func(results <-chan *ServiceEntry) {
-			s := <-results
-			expectedResult = append(expectedResult, s)
-		}(entries)
+		go func() {
+			for {
+				select {
+				case s := <-entries:
+					expectedResult = append(expectedResult, s)
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 
 		if err := resolver.Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
 			t.Fatalf("Expected browse success, but got %v", err)
