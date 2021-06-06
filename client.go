@@ -86,6 +86,7 @@ func (r *Resolver) Browse(ctx context.Context, service, domain string, entries c
 		params.Domain = domain
 	}
 	params.Entries = entries
+	params.isBrowsing = true
 	ctx, cancel := context.WithCancel(ctx)
 	go r.c.mainloop(ctx, params)
 
@@ -134,7 +135,7 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 
 // defaultParams returns a default set of QueryParams.
 func defaultParams(service string) *lookupParams {
-	return newLookupParams("", service, "local", make(chan *ServiceEntry))
+	return newLookupParams("", service, "local", false, make(chan *ServiceEntry))
 }
 
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
@@ -293,7 +294,9 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 				// service entry.
 				params.Entries <- e
 				sentEntries[k] = e
-				params.disableProbing()
+				if !params.isBrowsing {
+					params.disableProbing()
+				}
 			}
 			// reset entries
 			entries = make(map[string]*ServiceEntry)
@@ -368,10 +371,6 @@ func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *dns.Msg) {
 // TODO: move error reporting to shutdown function as periodicQuery is called from
 // go routine context.
 func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error {
-	if params.stopProbing == nil {
-		return nil
-	}
-
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 4 * time.Second
 	bo.MaxInterval = 60 * time.Second
