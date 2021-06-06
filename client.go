@@ -133,8 +133,8 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 }
 
 // defaultParams returns a default set of QueryParams.
-func defaultParams(service string) *LookupParams {
-	return NewLookupParams("", service, "local", make(chan *ServiceEntry))
+func defaultParams(service string) *lookupParams {
+	return newLookupParams("", service, "local", make(chan *ServiceEntry))
 }
 
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
@@ -177,7 +177,7 @@ func newClient(opts clientOpts) (*client, error) {
 }
 
 // Start listeners and waits for the shutdown signal from exit channel
-func (c *client) mainloop(ctx context.Context, params *LookupParams) {
+func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 	// start listening for responses
 	msgCh := make(chan *dns.Msg, 32)
 	if c.ipv4conn != nil {
@@ -367,7 +367,7 @@ func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *dns.Msg) {
 // the main processing loop or some timeout/cancel fires.
 // TODO: move error reporting to shutdown function as periodicQuery is called from
 // go routine context.
-func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error {
+func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error {
 	if params.stopProbing == nil {
 		return nil
 	}
@@ -404,7 +404,7 @@ func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error 
 
 // Performs the actual query by service name (browse) or service instance name (lookup),
 // start response listeners goroutines and loops over the entries channel.
-func (c *client) query(params *LookupParams) error {
+func (c *client) query(params *lookupParams) error {
 	var serviceName, serviceInstanceName string
 	serviceName = fmt.Sprintf("%s.%s.", trimDot(params.Service), trimDot(params.Domain))
 
