@@ -21,6 +21,8 @@ const (
 	multicastRepetitions = 2
 )
 
+var defaultTTL uint32 = 3200
+
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
@@ -173,7 +175,7 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 		ipv4conn:       ipv4conn,
 		ipv6conn:       ipv6conn,
 		ifaces:         ifaces,
-		ttl:            3200,
+		ttl:            defaultTTL,
 		shouldShutdown: make(chan struct{}),
 	}
 
