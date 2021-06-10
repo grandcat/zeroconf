@@ -70,18 +70,22 @@ type lookupParams struct {
 	ServiceRecord
 	Entries chan<- *ServiceEntry // Entries Channel
 
+	isBrowsing  bool
 	stopProbing chan struct{}
 	once        sync.Once
 }
 
 // newLookupParams constructs a lookupParams.
-func newLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *lookupParams {
-	return &lookupParams{
+func newLookupParams(instance, service, domain string, isBrowsing bool, entries chan<- *ServiceEntry) *lookupParams {
+	p := &lookupParams{
 		ServiceRecord: *NewServiceRecord(instance, service, domain),
 		Entries:       entries,
-
-		stopProbing: make(chan struct{}),
+		isBrowsing:    isBrowsing,
 	}
+	if !isBrowsing {
+		p.stopProbing = make(chan struct{})
+	}
+	return p
 }
 
 // Notify subscriber that no more entries will arrive. Mostly caused
