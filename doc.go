@@ -6,7 +6,7 @@
 // RFC 6762 (mDNS) and
 // RFC 6763 (DNS-SD).
 // Though it does not support all requirements yet, the aim is to provide a
-// complient solution in the long-term with the community.
+// compliant solution in the long-term with the community.
 //
 // By now, it should be compatible to [Avahi](http://avahi.org/) (tested) and
 // Apple's Bonjour (untested). Should work in the most office, home and private

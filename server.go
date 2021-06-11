@@ -29,23 +29,23 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	entry.Text = text
 
 	if entry.Instance == "" {
-		return nil, fmt.Errorf("Missing service instance name")
+		return nil, fmt.Errorf("missing service instance name")
 	}
 	if entry.Service == "" {
-		return nil, fmt.Errorf("Missing service name")
+		return nil, fmt.Errorf("missing service name")
 	}
 	if entry.Domain == "" {
 		entry.Domain = "local."
 	}
 	if entry.Port == 0 {
-		return nil, fmt.Errorf("Missing port")
+		return nil, fmt.Errorf("missing port")
 	}
 
 	var err error
 	if entry.HostName == "" {
 		entry.HostName, err = os.Hostname()
 		if err != nil {
-			return nil, fmt.Errorf("Could not determine host")
+			return nil, fmt.Errorf("could not determine host")
 		}
 	}
 
@@ -64,7 +64,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	}
 
 	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
-		return nil, fmt.Errorf("Could not determine host IP addresses")
+		return nil, fmt.Errorf("could not determine host IP addresses")
 	}
 
 	s, err := newServer(ifaces)
@@ -88,19 +88,19 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	entry.HostName = host
 
 	if entry.Instance == "" {
-		return nil, fmt.Errorf("Missing service instance name")
+		return nil, fmt.Errorf("missing service instance name")
 	}
 	if entry.Service == "" {
-		return nil, fmt.Errorf("Missing service name")
+		return nil, fmt.Errorf("missing service name")
 	}
 	if entry.HostName == "" {
-		return nil, fmt.Errorf("Missing host name")
+		return nil, fmt.Errorf("missing host name")
 	}
 	if entry.Domain == "" {
 		entry.Domain = "local"
 	}
 	if entry.Port == 0 {
-		return nil, fmt.Errorf("Missing port")
+		return nil, fmt.Errorf("missing port")
 	}
 
 	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
@@ -110,13 +110,13 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	for _, ip := range ips {
 		ipAddr := net.ParseIP(ip)
 		if ipAddr == nil {
-			return nil, fmt.Errorf("Failed to parse given IP: %v", ip)
+			return nil, fmt.Errorf("failed to parse given IP: %v", ip)
 		} else if ipv4 := ipAddr.To4(); ipv4 != nil {
 			entry.AddrIPv4 = append(entry.AddrIPv4, ipAddr)
 		} else if ipv6 := ipAddr.To16(); ipv6 != nil {
 			entry.AddrIPv6 = append(entry.AddrIPv6, ipAddr)
 		} else {
-			return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
+			return nil, fmt.Errorf("the IP is neither IPv4 nor IPv6: %#v", ipAddr)
 		}
 	}
 
@@ -156,17 +156,17 @@ type Server struct {
 
 // Constructs server structure
 func newServer(ifaces []net.Interface) (*Server, error) {
-	ipv4conn, err4 := joinUdp4Multicast(ifaces)
+	ipv4conn, err4 := joinUDP4Multicast(ifaces)
 	if err4 != nil {
 		log.Printf("[zeroconf] no suitable IPv4 interface: %s", err4.Error())
 	}
-	ipv6conn, err6 := joinUdp6Multicast(ifaces)
+	ipv6conn, err6 := joinUDP6Multicast(ifaces)
 	if err6 != nil {
 		log.Printf("[zeroconf] no suitable IPv6 interface: %s", err6.Error())
 	}
 	if err4 != nil && err6 != nil {
 		// No supported interface left.
-		return nil, fmt.Errorf("No supported interface")
+		return nil, fmt.Errorf("no supported interface")
 	}
 
 	s := &Server{
@@ -191,14 +191,14 @@ func (s *Server) mainloop() {
 }
 
 // Shutdown closes all udp connections and unregisters the service
-func (s *Server) Shutdown() {
-	s.shutdown()
+func (s *Server) Shutdown() error {
+	return s.shutdown()
 }
 
 // SetText updates and announces the TXT records
-func (s *Server) SetText(text []string) {
+func (s *Server) SetText(text []string) error {
 	s.service.Text = text
-	s.announceText()
+	return s.announceText()
 }
 
 // TTL sets the TTL for DNS replies
@@ -331,7 +331,7 @@ func (s *Server) handleQuery(query *dns.Msg, ifIndex int, from net.Addr) error {
 				err = e
 			}
 		} else {
-			// Send mulicast
+			// Send multicast
 			if e := s.multicastResponse(&resp, ifIndex); e != nil {
 				err = e
 			}
@@ -592,7 +592,7 @@ func (s *Server) probe() {
 }
 
 // announceText sends a Text announcement with cache flush enabled
-func (s *Server) announceText() {
+func (s *Server) announceText() error {
 	resp := new(dns.Msg)
 	resp.MsgHdr.Response = true
 
@@ -607,7 +607,7 @@ func (s *Server) announceText() {
 	}
 
 	resp.Answer = []dns.RR{txt}
-	s.multicastResponse(resp, 0)
+	return s.multicastResponse(resp, 0)
 }
 
 func (s *Server) unregister() error {
@@ -706,16 +706,16 @@ func (s *Server) unicastResponse(resp *dns.Msg, ifIndex int, from net.Addr) erro
 			_, err = s.ipv4conn.WriteTo(buf, nil, addr)
 		}
 		return err
-	} else {
-		if ifIndex != 0 {
-			var wcm ipv6.ControlMessage
-			wcm.IfIndex = ifIndex
-			_, err = s.ipv6conn.WriteTo(buf, &wcm, addr)
-		} else {
-			_, err = s.ipv6conn.WriteTo(buf, nil, addr)
-		}
-		return err
 	}
+	if ifIndex != 0 {
+		var wcm ipv6.ControlMessage
+		wcm.IfIndex = ifIndex
+		_, err = s.ipv6conn.WriteTo(buf, &wcm, addr)
+	} else {
+		_, err = s.ipv6conn.WriteTo(buf, nil, addr)
+	}
+	return err
+
 }
 
 // multicastResponse us used to send a multicast response packet

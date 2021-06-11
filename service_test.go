@@ -2,6 +2,7 @@ package zeroconf
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -23,13 +24,16 @@ func startMDNS(ctx context.Context, port int, name, service, domain string) {
 	if err != nil {
 		panic(errors.Wrap(err, "while registering mdns service"))
 	}
-	defer server.Shutdown()
+	defer func() {
+		if err := server.Shutdown(); err != nil {
+			panic(errors.Wrap(err, "while shutting mdns service"))
+		}
+	}()
 	log.Printf("Published service: %s, type: %s, domain: %s", name, service, domain)
 
 	<-ctx.Done()
 
 	log.Printf("Shutting down.")
-
 }
 
 func TestBasic(t *testing.T) {
@@ -79,12 +83,13 @@ func TestNoRegister(t *testing.T) {
 		t.Fatalf("Expected create resolver success, but got %v", err)
 	}
 
-	// before register, mdns resolve shuold not have any entry
+	// before register, mdns resolve should not have any entry
 	entries := make(chan *ServiceEntry)
+	var resultError error
 	go func(results <-chan *ServiceEntry) {
 		s := <-results
 		if s != nil {
-			t.Fatalf("Expected empty service entries but got %v", *s)
+			resultError = fmt.Errorf("Expected empty service entries but got %v", *s)
 		}
 	}(entries)
 
@@ -94,6 +99,9 @@ func TestNoRegister(t *testing.T) {
 	}
 	<-ctx.Done()
 	cancel()
+	if resultError != nil {
+		t.Fatal(resultError)
+	}
 }
 
 func TestSubtype(t *testing.T) {
