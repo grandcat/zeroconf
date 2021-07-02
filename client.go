@@ -298,8 +298,6 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 					params.disableProbing()
 				}
 			}
-			// reset entries
-			entries = make(map[string]*ServiceEntry)
 		}
 	}
 }
