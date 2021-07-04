@@ -26,6 +26,13 @@ const (
 	IPv4AndIPv6 = (IPv4 | IPv6) //< Default option.
 )
 
+// Client structure encapsulates both IPv4/IPv6 UDP connections.
+type client struct {
+	ipv4conn *ipv4.PacketConn
+	ipv6conn *ipv6.PacketConn
+	ifaces   []net.Interface
+}
+
 type clientOpts struct {
 	listenOn IPType
 	ifaces   []net.Interface
@@ -52,14 +59,37 @@ func SelectIfaces(ifaces []net.Interface) ClientOption {
 	}
 }
 
-// Resolver acts as entry point for service lookups and to browse the DNS-SD.
-type Resolver struct {
-	c *client
+// Browse for all services of a given type in a given domain.
+func Browse(ctx context.Context, service, domain string, entries chan<- *ServiceEntry, opts ...ClientOption) error {
+	cl, err := newClient(applyOpts(opts...))
+	if err != nil {
+		return err
+	}
+	params := defaultParams(service)
+	if domain != "" {
+		params.Domain = domain
+	}
+	params.Entries = entries
+	params.isBrowsing = true
+	return cl.run(ctx, params)
 }
 
-// NewResolver creates a new resolver and joins the UDP multicast groups to
-// listen for mDNS messages.
-func NewResolver(options ...ClientOption) (*Resolver, error) {
+// Lookup a specific service by its name and type in a given domain.
+func Lookup(ctx context.Context, instance, service, domain string, entries chan<- *ServiceEntry, opts ...ClientOption) error {
+	cl, err := newClient(applyOpts(opts...))
+	if err != nil {
+		return err
+	}
+	params := defaultParams(service)
+	params.Instance = instance
+	if domain != "" {
+		params.Domain = domain
+	}
+	params.Entries = entries
+	return cl.run(ctx, params)
+}
+
+func applyOpts(options ...ClientOption) clientOpts {
 	// Apply default configuration and load supplied options.
 	var conf = clientOpts{
 		listenOn: IPv4AndIPv6,
@@ -69,63 +99,21 @@ func NewResolver(options ...ClientOption) (*Resolver, error) {
 			o(&conf)
 		}
 	}
-
-	c, err := newClient(conf)
-	if err != nil {
-		return nil, err
-	}
-	return &Resolver{
-		c: c,
-	}, nil
+	return conf
 }
 
-// Browse for all services of a given type in a given domain.
-func (r *Resolver) Browse(ctx context.Context, service, domain string, entries chan<- *ServiceEntry) error {
-	params := defaultParams(service)
-	if domain != "" {
-		params.Domain = domain
-	}
-	params.Entries = entries
-	params.isBrowsing = true
+func (c *client) run(ctx context.Context, params *lookupParams) error {
 	ctx, cancel := context.WithCancel(ctx)
-	go r.c.mainloop(ctx, params)
+	go c.mainloop(ctx, params)
 
-	err := r.c.query(params)
-	if err != nil {
+	if err := c.query(params); err != nil {
 		cancel()
 		return err
 	}
 	// If previous probe was ok, it should be fine now. In case of an error later on,
 	// the entries' queue is closed.
 	go func() {
-		if err := r.c.periodicQuery(ctx, params); err != nil {
-			cancel()
-		}
-	}()
-
-	return nil
-}
-
-// Lookup a specific service by its name and type in a given domain.
-func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string, entries chan<- *ServiceEntry) error {
-	params := defaultParams(service)
-	params.Instance = instance
-	if domain != "" {
-		params.Domain = domain
-	}
-	params.Entries = entries
-	ctx, cancel := context.WithCancel(ctx)
-	go r.c.mainloop(ctx, params)
-	err := r.c.query(params)
-	if err != nil {
-		// cancel mainloop
-		cancel()
-		return err
-	}
-	// If previous probe was ok, it should be fine now. In case of an error later on,
-	// the entries' queue is closed.
-	go func() {
-		if err := r.c.periodicQuery(ctx, params); err != nil {
+		if err := c.periodicQuery(ctx, params); err != nil {
 			cancel()
 		}
 	}()
@@ -136,13 +124,6 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 // defaultParams returns a default set of QueryParams.
 func defaultParams(service string) *lookupParams {
 	return newLookupParams("", service, "local", false, make(chan *ServiceEntry))
-}
-
-// Client structure encapsulates both IPv4/IPv6 UDP connections.
-type client struct {
-	ipv4conn *ipv4.PacketConn
-	ipv6conn *ipv6.PacketConn
-	ifaces   []net.Interface
 }
 
 // Client structure constructor
