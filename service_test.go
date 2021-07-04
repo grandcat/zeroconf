@@ -40,12 +40,8 @@ func TestBasic(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	resolver, err := NewResolver(nil)
-	if err != nil {
-		t.Fatalf("Expected create resolver success, but got %v", err)
-	}
 	entries := make(chan *ServiceEntry, 100)
-	if err := resolver.Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
+	if err := Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
 		t.Fatalf("Expected browse success, but got %v", err)
 	}
 	<-ctx.Done()
@@ -69,11 +65,6 @@ func TestBasic(t *testing.T) {
 }
 
 func TestNoRegister(t *testing.T) {
-	resolver, err := NewResolver(nil)
-	if err != nil {
-		t.Fatalf("Expected create resolver success, but got %v", err)
-	}
-
 	// before register, mdns resolve shuold not have any entry
 	entries := make(chan *ServiceEntry)
 	go func(results <-chan *ServiceEntry) {
@@ -84,7 +75,7 @@ func TestNoRegister(t *testing.T) {
 	}(entries)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := resolver.Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
+	if err := Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
 		t.Fatalf("Expected browse success, but got %v", err)
 	}
 	<-ctx.Done()
@@ -100,12 +91,8 @@ func TestSubtype(t *testing.T) {
 
 		time.Sleep(time.Second)
 
-		resolver, err := NewResolver(nil)
-		if err != nil {
-			t.Fatalf("Expected create resolver success, but got %v", err)
-		}
 		entries := make(chan *ServiceEntry, 100)
-		if err := resolver.Browse(ctx, mdnsSubtype, mdnsDomain, entries); err != nil {
+		if err := Browse(ctx, mdnsSubtype, mdnsDomain, entries); err != nil {
 			t.Fatalf("Expected browse success, but got %v", err)
 		}
 		<-ctx.Done()
@@ -136,12 +123,8 @@ func TestSubtype(t *testing.T) {
 
 		time.Sleep(time.Second)
 
-		resolver, err := NewResolver(nil)
-		if err != nil {
-			t.Fatalf("Expected create resolver success, but got %v", err)
-		}
 		entries := make(chan *ServiceEntry, 100)
-		if err := resolver.Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
+		if err := Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
 			t.Fatalf("Expected browse success, but got %v", err)
 		}
 		<-ctx.Done()
