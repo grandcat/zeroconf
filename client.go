@@ -104,12 +104,18 @@ func applyOpts(options ...ClientOption) clientOpts {
 
 func (c *client) run(ctx context.Context, params *lookupParams) error {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	go c.mainloop(ctx, params)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		c.mainloop(ctx, params)
+	}()
 
 	// If previous probe was ok, it should be fine now. In case of an error later on,
 	// the entries' queue is closed.
-	return c.periodicQuery(ctx, params)
+	err := c.periodicQuery(ctx, params)
+	cancel()
+	<-done
+	return err
 }
 
 // defaultParams returns a default set of QueryParams.
