@@ -104,21 +104,12 @@ func applyOpts(options ...ClientOption) clientOpts {
 
 func (c *client) run(ctx context.Context, params *lookupParams) error {
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	go c.mainloop(ctx, params)
 
-	if err := c.query(params); err != nil {
-		cancel()
-		return err
-	}
 	// If previous probe was ok, it should be fine now. In case of an error later on,
 	// the entries' queue is closed.
-	go func() {
-		if err := c.periodicQuery(ctx, params); err != nil {
-			cancel()
-		}
-	}()
-
-	return nil
+	return c.periodicQuery(ctx, params)
 }
 
 // defaultParams returns a default set of QueryParams.
@@ -362,6 +353,10 @@ func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error 
 		}
 	}()
 	for {
+		// Do periodic query.
+		if err := c.query(params); err != nil {
+			return err
+		}
 		// Backoff and cancel logic.
 		wait := bo.NextBackOff()
 		if wait == backoff.Stop {
@@ -372,6 +367,7 @@ func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error 
 		} else {
 			timer.Reset(wait)
 		}
+
 		select {
 		case <-timer.C:
 			// Wait for next iteration.
@@ -380,11 +376,10 @@ func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error 
 			// Done here. Received a matching mDNS entry.
 			return nil
 		case <-ctx.Done():
+			if params.isBrowsing {
+				return nil
+			}
 			return ctx.Err()
-		}
-		// Do periodic query.
-		if err := c.query(params); err != nil {
-			return err
 		}
 	}
 }
@@ -409,11 +404,7 @@ func (c *client) query(params *lookupParams) error {
 		m.SetQuestion(serviceName, dns.TypePTR)
 	}
 	m.RecursionDesired = false
-	if err := c.sendQuery(m); err != nil {
-		return err
-	}
-
-	return nil
+	return c.sendQuery(m)
 }
 
 // Pack the dns.Msg and write to available connections (multicast)
