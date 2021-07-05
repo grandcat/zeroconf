@@ -28,8 +28,3 @@ jobs:
       - name: Run tests with race detector
         if: ${{ matrix.os == 'ubuntu' }} # speed things up. Windows and OSX VMs are slow
         run: go test -v -race ./...
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@967e2b38a85a62bd61be5529ada27ebc109948c2 # v1.4.1
-        with:
-          file: coverage.txt
-          env_vars: OS=${{ matrix.os }}, GO=${{ matrix.go }}
