@@ -1,10 +1,17 @@
-on: [push, pull_request]
-name: Go Checks
+name: linting
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
 
 jobs:
   unit:
     runs-on: ubuntu-latest
     name: All
+    strategy:
+      fail-fast: false
     steps:
       - uses: actions/checkout@v2
         with:
@@ -25,7 +32,6 @@ jobs:
             fi
             git diff --exit-code -- go.sum go.mod
       - name: gofmt
-        if: ${{ success() || failure() }} # run this step even if the previous one failed
         run: |
           out=$(gofmt -s -l .)
           if [[ -n "$out" ]]; then
@@ -33,12 +39,10 @@ jobs:
             exit 1
           fi
       - name: go vet
-        if: ${{ success() || failure() }} # run this step even if the previous one failed
         uses: protocol/multiple-go-modules@v1.0
         with:
           run: go vet ./...
       - name: staticcheck
-        if: ${{ success() || failure() }} # run this step even if the previous one failed
         uses: protocol/multiple-go-modules@v1.0
         with:
           run: |
