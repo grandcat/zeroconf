@@ -79,7 +79,7 @@ func TestNoRegister(t *testing.T) {
 	go func(results <-chan *ServiceEntry) {
 		s := <-results
 		if s != nil {
-			t.Fatalf("Expected empty service entries but got %v", *s)
+			t.Errorf("Expected empty service entries but got %v", *s)
 		}
 	}(entries)
 
