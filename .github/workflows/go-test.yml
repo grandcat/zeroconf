@@ -1,4 +1,10 @@
-on: [push, pull_request]
+name: unittest
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
 
 jobs:
   unit:
@@ -19,7 +25,7 @@ jobs:
           go version
           go env
       - name: Run tests
-        run: go test -v -coverprofile coverage.txt ./...
+        run: go test -v ./...
       - name: Run tests (32 bit)
         if: ${{ matrix.os != 'macos' }} # can't run 32 bit tests on OSX.
         env:
