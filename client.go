@@ -383,10 +383,6 @@ func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error 
 		}
 	}()
 	for {
-		// Do periodic query.
-		if err := c.query(params); err != nil {
-			return err
-		}
 		// Backoff and cancel logic.
 		wait := bo.NextBackOff()
 		if wait == backoff.Stop {
@@ -406,10 +402,12 @@ func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error 
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
-
+		}
+		// Do periodic query.
+		if err := c.query(params); err != nil {
+			return err
 		}
 	}
-
 }
 
 // Performs the actual query by service name (browse) or service instance name (lookup),
