@@ -38,23 +38,23 @@ func register(instance, service, domain string, port int, text []string, ifaces 
 	entry.Text = text
 
 	if entry.Instance == "" {
-		return nil, fmt.Errorf("Missing service instance name")
+		return nil, fmt.Errorf("missing service instance name")
 	}
 	if entry.Service == "" {
-		return nil, fmt.Errorf("Missing service name")
+		return nil, fmt.Errorf("missing service name")
 	}
 	if entry.Domain == "" {
 		entry.Domain = "local."
 	}
 	if entry.Port == 0 {
-		return nil, fmt.Errorf("Missing port")
+		return nil, fmt.Errorf("missing port")
 	}
 
 	var err error
 	if entry.HostName == "" {
 		entry.HostName, err = os.Hostname()
 		if err != nil {
-			return nil, fmt.Errorf("Could not determine host")
+			return nil, fmt.Errorf("could not determine host")
 		}
 	}
 
@@ -73,7 +73,7 @@ func register(instance, service, domain string, port int, text []string, ifaces 
 	}
 
 	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
-		return nil, fmt.Errorf("Could not determine host IP addresses")
+		return nil, fmt.Errorf("could not determine host IP addresses")
 	}
 
 	s, err := newServer(ifaces)
@@ -97,19 +97,19 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	entry.HostName = host
 
 	if entry.Instance == "" {
-		return nil, fmt.Errorf("Missing service instance name")
+		return nil, fmt.Errorf("missing service instance name")
 	}
 	if entry.Service == "" {
-		return nil, fmt.Errorf("Missing service name")
+		return nil, fmt.Errorf("missing service name")
 	}
 	if entry.HostName == "" {
-		return nil, fmt.Errorf("Missing host name")
+		return nil, fmt.Errorf("missing host name")
 	}
 	if entry.Domain == "" {
 		entry.Domain = "local"
 	}
 	if entry.Port == 0 {
-		return nil, fmt.Errorf("Missing port")
+		return nil, fmt.Errorf("missing port")
 	}
 
 	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
@@ -119,13 +119,13 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	for _, ip := range ips {
 		ipAddr := net.ParseIP(ip)
 		if ipAddr == nil {
-			return nil, fmt.Errorf("Failed to parse given IP: %v", ip)
+			return nil, fmt.Errorf("failed to parse given IP: %v", ip)
 		} else if ipv4 := ipAddr.To4(); ipv4 != nil {
 			entry.AddrIPv4 = append(entry.AddrIPv4, ipAddr)
 		} else if ipv6 := ipAddr.To16(); ipv6 != nil {
 			entry.AddrIPv6 = append(entry.AddrIPv6, ipAddr)
 		} else {
-			return nil, fmt.Errorf("The IP is neither IPv4 nor IPv6: %#v", ipAddr)
+			return nil, fmt.Errorf("the IP is neither IPv4 nor IPv6: %#v", ipAddr)
 		}
 	}
 
@@ -176,7 +176,7 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 	}
 	if err4 != nil && err6 != nil {
 		// No supported interface left.
-		return nil, fmt.Errorf("No supported interface")
+		return nil, fmt.Errorf("no supported interface")
 	}
 
 	s := &Server{
@@ -221,13 +221,10 @@ func (s *Server) shutdown() error {
 	s.shutdownLock.Lock()
 	defer s.shutdownLock.Unlock()
 	if s.isShutdown {
-		return errors.New("Server is already shutdown")
+		return errors.New("server is already shutdown")
 	}
 
 	err := s.unregister()
-	if err != nil {
-		return err
-	}
 
 	close(s.shouldShutdown)
 
@@ -242,7 +239,7 @@ func (s *Server) shutdown() error {
 	s.shutdownEnd.Wait()
 	s.isShutdown = true
 
-	return nil
+	return err
 }
 
 // recv is a long running routine to receive packets from an interface
@@ -266,9 +263,7 @@ func (s *Server) recv4(c *ipv4.PacketConn) {
 			if cm != nil {
 				ifIndex = cm.IfIndex
 			}
-			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				// log.Printf("[ERR] zeroconf: failed to handle query v4: %v", err)
-			}
+			_ = s.parsePacket(buf[:n], ifIndex, from)
 		}
 	}
 }
@@ -294,9 +289,7 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 			if cm != nil {
 				ifIndex = cm.IfIndex
 			}
-			if err := s.parsePacket(buf[:n], ifIndex, from); err != nil {
-				// log.Printf("[ERR] zeroconf: failed to handle query v6: %v", err)
-			}
+			_ = s.parsePacket(buf[:n], ifIndex, from)
 		}
 	}
 }
@@ -401,6 +394,18 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 
 	case s.service.ServiceInstanceName():
 		s.composeLookupAnswers(resp, s.ttl, ifIndex, false)
+	default:
+		// handle matching subtype query
+		for _, subtype := range s.service.Subtypes {
+			subtype = fmt.Sprintf("%s._sub.%s", subtype, s.service.ServiceName())
+			if q.Name == subtype {
+				s.composeBrowsingAnswers(resp, ifIndex)
+				if isKnownAnswer(resp, query) {
+					resp.Answer = nil
+				}
+				break
+			}
+		}
 	}
 
 	return nil
@@ -490,6 +495,19 @@ func (s *Server) composeLookupAnswers(resp *dns.Msg, ttl uint32, ifIndex int, fl
 		Ptr: s.service.ServiceName(),
 	}
 	resp.Answer = append(resp.Answer, srv, txt, ptr, dnssd)
+
+	for _, subtype := range s.service.Subtypes {
+		resp.Answer = append(resp.Answer,
+			&dns.PTR{
+				Hdr: dns.RR_Header{
+					Name:   subtype,
+					Rrtype: dns.TypePTR,
+					Class:  dns.ClassINET,
+					Ttl:    ttl,
+				},
+				Ptr: s.service.ServiceInstanceName(),
+			})
+	}
 
 	resp.Answer = s.appendAddrs(resp.Answer, ttl, ifIndex, flushCache)
 }

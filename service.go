@@ -8,9 +8,10 @@ import (
 
 // ServiceRecord contains the basic description of a service, which contains instance name, service type & domain
 type ServiceRecord struct {
-	Instance string `json:"name"`   // Instance name (e.g. "My web page")
-	Service  string `json:"type"`   // Service name (e.g. _http._tcp.)
-	Domain   string `json:"domain"` // If blank, assumes "local"
+	Instance string   `json:"name"`     // Instance name (e.g. "My web page")
+	Service  string   `json:"type"`     // Service name (e.g. _http._tcp.)
+	Subtypes []string `json:"subtypes"` // Service subtypes
+	Domain   string   `json:"domain"`   // If blank, assumes "local"
 
 	// private variable populated on ServiceRecord creation
 	serviceName         string
@@ -36,12 +37,17 @@ func (s *ServiceRecord) ServiceTypeName() string {
 }
 
 // NewServiceRecord constructs a ServiceRecord.
-func NewServiceRecord(instance, service, domain string) *ServiceRecord {
+func NewServiceRecord(instance, service string, domain string) *ServiceRecord {
+	service, subtypes := parseSubtypes(service)
 	s := &ServiceRecord{
 		Instance:    instance,
 		Service:     service,
 		Domain:      domain,
 		serviceName: fmt.Sprintf("%s.%s.", trimDot(service), trimDot(domain)),
+	}
+
+	for _, subtype := range subtypes {
+		s.Subtypes = append(s.Subtypes, fmt.Sprintf("%s._sub.%s", trimDot(subtype), s.serviceName))
 	}
 
 	// Cache service instance name
@@ -59,32 +65,36 @@ func NewServiceRecord(instance, service, domain string) *ServiceRecord {
 	return s
 }
 
-// LookupParams contains configurable properties to create a service discovery request
-type LookupParams struct {
+// lookupParams contains configurable properties to create a service discovery request
+type lookupParams struct {
 	ServiceRecord
 	Entries chan<- *ServiceEntry // Entries Channel
 
+	isBrowsing  bool
 	stopProbing chan struct{}
 	once        sync.Once
 }
 
-// NewLookupParams constructs a LookupParams.
-func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *LookupParams {
-	return &LookupParams{
+// newLookupParams constructs a lookupParams.
+func newLookupParams(instance, service, domain string, isBrowsing bool, entries chan<- *ServiceEntry) *lookupParams {
+	p := &lookupParams{
 		ServiceRecord: *NewServiceRecord(instance, service, domain),
 		Entries:       entries,
-
-		stopProbing: make(chan struct{}),
+		isBrowsing:    isBrowsing,
 	}
+	if !isBrowsing {
+		p.stopProbing = make(chan struct{})
+	}
+	return p
 }
 
 // Notify subscriber that no more entries will arrive. Mostly caused
 // by an expired context.
-func (l *LookupParams) done() {
+func (l *lookupParams) done() {
 	close(l.Entries)
 }
 
-func (l *LookupParams) disableProbing() {
+func (l *lookupParams) disableProbing() {
 	l.once.Do(func() { close(l.stopProbing) })
 }
 
@@ -102,7 +112,7 @@ type ServiceEntry struct {
 }
 
 // NewServiceEntry constructs a ServiceEntry.
-func NewServiceEntry(instance, service, domain string) *ServiceEntry {
+func NewServiceEntry(instance, service string, domain string) *ServiceEntry {
 	return &ServiceEntry{
 		ServiceRecord: *NewServiceRecord(instance, service, domain),
 	}

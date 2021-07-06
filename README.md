@@ -10,14 +10,14 @@ in the local network.
 It basically implements aspects of the standards
 [RFC 6762](https://tools.ietf.org/html/rfc6762) (mDNS) and
 [RFC 6763](https://tools.ietf.org/html/rfc6763) (DNS-SD).
-Though it does not support all requirements yet, the aim is to provide a complient solution in the long-term with the community.
+Though it does not support all requirements yet, the aim is to provide a compliant solution in the long-term with the community.
 
 By now, it should be compatible to [Avahi](http://avahi.org/) (tested) and Apple's Bonjour (untested).
 Target environments: private LAN/Wifi, small or isolated networks.
 
 [![GoDoc](https://godoc.org/github.com/grandcat/zeroconf?status.svg)](https://godoc.org/github.com/grandcat/zeroconf)
 [![Go Report Card](https://goreportcard.com/badge/github.com/grandcat/zeroconf)](https://goreportcard.com/report/github.com/grandcat/zeroconf)
-[![Build Status](https://travis-ci.com/grandcat/zeroconf.svg?branch=master)](https://travis-ci.com/grandcat/zeroconf)
+[![Tests](https://github.com/grandcat/zeroconf/actions/workflows/go-test.yml/badge.svg)](https://github.com/grandcat/zeroconf/actions/workflows/go-test.yml)
 
 ## Install
 Nothing is as easy as that:
@@ -52,6 +52,8 @@ if err != nil {
 
 <-ctx.Done()
 ```
+A subtype may added to service name to narrow the set of results. E.g. to browse `_workstation._tcp` with subtype `_windows`, use`_workstation._tcp,_windows`.
+
 See https://github.com/grandcat/zeroconf/blob/master/examples/resolv/client.go.
 
 ## Lookup a specific service instance
@@ -81,6 +83,8 @@ case <-time.After(time.Second * 120):
 
 log.Println("Shutting down.")
 ```
+Multiple subtypes may be added to service name, separated by commas. E.g `_workstation._tcp,_windows` has subtype `_windows`.
+
 See https://github.com/grandcat/zeroconf/blob/master/examples/register/server.go.
 
 ## Features and ToDo's
@@ -95,8 +99,8 @@ See what needs to be done and submit a pull request :)
 
 _Notes:_
 
-(*) The denoted functionalities might not be 100% standard conform, but should not be a deal breaker.
-    Some test scenarios demonstrated that the overall robustness and performance increases when applying the suggested improvements.
+(*) The denoted features might not be perfectly standards compliant, but shouldn't cause any problems.
+    Some tests showed improvements in overall robustness and performance with the features enabled.
 
 ## Credits
 Great thanks to [hashicorp](https://github.com/hashicorp/mdns) and to [oleksandr](https://github.com/oleksandr/bonjour) and all contributing authors for the code this projects bases upon.
