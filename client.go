@@ -26,6 +26,9 @@ const (
 	IPv4AndIPv6 = (IPv4 | IPv6) //< Default option.
 )
 
+// DoS protection: we won't cache more than 1024 entries when receiving entries.
+var maxSentEntries = 1024
+
 type clientOpts struct {
 	listenOn IPType
 	ifaces   []net.Interface
@@ -293,6 +296,12 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 				// This is also a point to possibly stop probing actively for a
 				// service entry.
 				params.Entries <- e
+				// DoS protection: don't cache more than maxSentEntries entries
+				if len(sentEntries) >= maxSentEntries {
+					for key := range sentEntries {
+						delete(sentEntries, key)
+					}
+				}
 				sentEntries[k] = e
 				if !params.isBrowsing {
 					params.disableProbing()

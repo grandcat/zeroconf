@@ -2,6 +2,7 @@ package zeroconf
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
+const (
 	mdnsName    = "test--xxxxxxxxxxxx"
 	mdnsService = "_test--xxxx._tcp"
 	mdnsSubtype = "_test--xxxx._tcp,_fancy"
@@ -161,6 +162,69 @@ func TestSubtype(t *testing.T) {
 		}
 		if result.Port != mdnsPort {
 			t.Fatalf("Expected port is %d, but got %d", mdnsPort, result.Port)
+		}
+	})
+
+	t.Run("DoS protection", func(t *testing.T) {
+		origMaxSentEntries := maxSentEntries
+		maxSentEntries = 10
+		defer func() { maxSentEntries = origMaxSentEntries }()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		const firstName = mdnsName
+
+		go startMDNS(ctx, mdnsPort, firstName, mdnsSubtype, mdnsDomain)
+		time.Sleep(time.Second)
+
+		resolver, err := NewResolver(nil)
+		if err != nil {
+			t.Fatalf("Expected create resolver success, but got %v", err)
+		}
+		entries := make(chan *ServiceEntry, maxSentEntries+1)
+		received := make(chan *ServiceEntry, 10)
+		go func() {
+			for {
+				select {
+				case entry := <-entries:
+					if entry.Instance == firstName {
+						received <- entry
+					}
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		if err := resolver.Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
+			t.Fatalf("Expected browse success, but got %v", err)
+		}
+		select {
+		case <-received:
+		case <-time.NewTimer(time.Second).C:
+			t.Fatal("expected to discover service")
+		}
+
+		for i := 1; i < maxSentEntries; i++ {
+			go startMDNS(ctx, mdnsPort, fmt.Sprintf("%s-%d", mdnsName, i), mdnsSubtype, mdnsDomain)
+		}
+		time.Sleep(time.Second)
+
+		select {
+		case entry := <-entries:
+			t.Fatalf("didn't expect to receive an entry, got %v", entry)
+		default:
+		}
+
+		// Announcing this service will cause the map to overflow.
+		go startMDNS(ctx, mdnsPort, fmt.Sprintf("%s-%d", mdnsName, maxSentEntries), mdnsSubtype, mdnsDomain)
+
+		// wait for a re-announcement of the firstName service
+		select {
+		case <-received:
+			cancel()
+		case <-ctx.Done():
+			t.Fatal("expected to discover service")
 		}
 	})
 }
