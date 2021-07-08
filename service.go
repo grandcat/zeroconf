@@ -73,6 +73,7 @@ type lookupParams struct {
 	isBrowsing  bool
 	stopProbing chan struct{}
 	once        sync.Once
+	queryType   uint16 // set in client.Resolve() for host lookup
 }
 
 // newLookupParams constructs a lookupParams.
