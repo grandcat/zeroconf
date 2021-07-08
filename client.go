@@ -442,17 +442,21 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 		return err
 	}
 	if c.ipv4conn != nil {
-		var wcm ipv4.ControlMessage
 		for ifi := range c.ifaces {
-			wcm.IfIndex = c.ifaces[ifi].Index
-			c.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
+			if err := c.ipv4conn.SetMulticastInterface(&c.ifaces[ifi]); err != nil {
+				// log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+				continue
+			}
+			c.ipv4conn.WriteTo(buf, nil, ipv4Addr)
 		}
 	}
 	if c.ipv6conn != nil {
-		var wcm ipv6.ControlMessage
 		for ifi := range c.ifaces {
-			wcm.IfIndex = c.ifaces[ifi].Index
-			c.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
+			if err := c.ipv6conn.SetMulticastInterface(&c.ifaces[ifi]); err != nil {
+				// log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+				continue
+			}
+			c.ipv6conn.WriteTo(buf, nil, ipv6Addr)
 		}
 	}
 	return nil
