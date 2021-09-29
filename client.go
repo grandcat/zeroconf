@@ -372,6 +372,7 @@ func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error 
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 4 * time.Second
 	bo.MaxInterval = 60 * time.Second
+	bo.MaxElapsedTime = 0
 	bo.Reset()
 
 	var timer *time.Timer
