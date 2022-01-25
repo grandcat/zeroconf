@@ -1,6 +1,7 @@
 package zeroconf
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -39,23 +40,23 @@ func register(instance, service, domain string, port int, text []string, ifaces 
 	entry.Text = text
 
 	if entry.Instance == "" {
-		return nil, fmt.Errorf("missing service instance name")
+		return nil, errors.New("missing service instance name")
 	}
 	if entry.Service == "" {
-		return nil, fmt.Errorf("missing service name")
+		return nil, errors.New("missing service name")
 	}
 	if entry.Domain == "" {
 		entry.Domain = "local."
 	}
 	if entry.Port == 0 {
-		return nil, fmt.Errorf("missing port")
+		return nil, errors.New("missing port")
 	}
 
 	var err error
 	if entry.HostName == "" {
 		entry.HostName, err = os.Hostname()
 		if err != nil {
-			return nil, fmt.Errorf("could not determine host")
+			return nil, errors.New("could not determine host")
 		}
 	}
 
@@ -75,20 +76,11 @@ func register(instance, service, domain string, port int, text []string, ifaces 
 		}
 
 		if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
-			return nil, fmt.Errorf("could not determine host IP addresses")
+			return nil, errors.New("could not determine host IP addresses")
 		}
 	}
 
-	s, err := newServer(ifaces)
-	if err != nil {
-		return nil, err
-	}
-
-	s.service = entry
-	go s.mainloop()
-	go s.probe()
-
-	return s, nil
+	return newServerForService(entry, ifaces)
 }
 
 // RegisterProxy registers a service proxy. This call will skip the hostname/IP lookup and
@@ -100,19 +92,19 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	entry.HostName = host
 
 	if entry.Instance == "" {
-		return nil, fmt.Errorf("missing service instance name")
+		return nil, errors.New("missing service instance name")
 	}
 	if entry.Service == "" {
-		return nil, fmt.Errorf("missing service name")
+		return nil, errors.New("missing service name")
 	}
 	if entry.HostName == "" {
-		return nil, fmt.Errorf("missing host name")
+		return nil, errors.New("missing host name")
 	}
 	if entry.Domain == "" {
 		entry.Domain = "local"
 	}
 	if entry.Port == 0 {
-		return nil, fmt.Errorf("missing port")
+		return nil, errors.New("missing port")
 	}
 
 	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
@@ -136,14 +128,19 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 		ifaces = listMulticastInterfaces()
 	}
 
+	return newServerForService(entry, ifaces)
+}
+
+func newServerForService(entry *ServiceEntry, ifaces []net.Interface) (*Server, error) {
 	s, err := newServer(ifaces)
 	if err != nil {
 		return nil, err
 	}
 
 	s.service = entry
-	go s.mainloop()
-	go s.probe()
+	s.startReceivers()
+	s.shutdownEnd.Add(1)
+	managedGo(s.probe, s.shutdownEnd.Done)
 
 	return s, nil
 }
@@ -159,11 +156,12 @@ type Server struct {
 	ipv6conn *ipv6.PacketConn
 	ifaces   []net.Interface
 
-	shouldShutdown chan struct{}
-	shutdownLock   sync.Mutex
-	shutdownEnd    sync.WaitGroup
-	isShutdown     bool
-	ttl            uint32
+	shutdownCtx       context.Context
+	shutdownCtxCancel func()
+	shutdownLock      sync.Mutex
+	shutdownEnd       sync.WaitGroup
+	isShutdown        bool
+	ttl               uint32
 }
 
 // Constructs server structure
@@ -178,27 +176,31 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 	}
 	if err4 != nil && err6 != nil {
 		// No supported interface left.
-		return nil, fmt.Errorf("no supported interface")
+		return nil, errors.New("no supported interface")
 	}
 
+	shutdownCtx, shutdownCtxCancel := context.WithCancel(context.Background())
 	s := &Server{
-		ipv4conn:       ipv4conn,
-		ipv6conn:       ipv6conn,
-		ifaces:         ifaces,
-		ttl:            3200,
-		shouldShutdown: make(chan struct{}),
+		ipv4conn:          ipv4conn,
+		ipv6conn:          ipv6conn,
+		ifaces:            ifaces,
+		ttl:               3200,
+		shutdownCtx:       shutdownCtx,
+		shutdownCtxCancel: shutdownCtxCancel,
 	}
 
 	return s, nil
 }
 
-// Start listeners and waits for the shutdown signal from exit channel
-func (s *Server) mainloop() {
+// startReceivers starts both IPv4/6 receiver loops and and waits for the shutdown signal from exit channel
+func (s *Server) startReceivers() {
 	if s.ipv4conn != nil {
-		go s.recv4(s.ipv4conn)
+		s.shutdownEnd.Add(1)
+		managedGo(func() { s.recv4(s.ipv4conn) }, s.shutdownEnd.Done)
 	}
 	if s.ipv6conn != nil {
-		go s.recv6(s.ipv6conn)
+		s.shutdownEnd.Add(1)
+		managedGo(func() { s.recv6(s.ipv6conn) }, s.shutdownEnd.Done)
 	}
 }
 
@@ -228,7 +230,7 @@ func (s *Server) shutdown() error {
 
 	err := s.unregister()
 
-	close(s.shouldShutdown)
+	s.shutdownCtxCancel()
 
 	if s.ipv4conn != nil {
 		s.ipv4conn.Close()
@@ -250,11 +252,9 @@ func (s *Server) recv4(c *ipv4.PacketConn) {
 		return
 	}
 	buf := make([]byte, 65536)
-	s.shutdownEnd.Add(1)
-	defer s.shutdownEnd.Done()
 	for {
 		select {
-		case <-s.shouldShutdown:
+		case <-s.shutdownCtx.Done():
 			return
 		default:
 			var ifIndex int
@@ -276,11 +276,9 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 		return
 	}
 	buf := make([]byte, 65536)
-	s.shutdownEnd.Add(1)
-	defer s.shutdownEnd.Done()
 	for {
 		select {
-		case <-s.shouldShutdown:
+		case <-s.shutdownCtx.Done():
 			return
 		default:
 			var ifIndex int
@@ -571,7 +569,9 @@ func (s *Server) probe() {
 		if err := s.multicastResponse(q, 0); err != nil {
 			log.Println("[ERR] zeroconf: failed to send probe:", err.Error())
 		}
-		time.Sleep(time.Duration(randomizer.Intn(250)) * time.Millisecond)
+		if !selectContextOrWait(s.shutdownCtx, time.Duration(randomizer.Intn(250))*time.Millisecond) {
+			return
+		}
 	}
 
 	// From RFC6762
@@ -594,7 +594,9 @@ func (s *Server) probe() {
 				log.Println("[ERR] zeroconf: failed to send announcement:", err.Error())
 			}
 		}
-		time.Sleep(timeout)
+		if !selectContextOrWait(s.shutdownCtx, timeout) {
+			return
+		}
 		timeout *= 2
 	}
 }

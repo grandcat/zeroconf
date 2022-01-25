@@ -28,8 +28,7 @@ func startMDNS(ctx context.Context, port int, name, service, domain string) {
 
 	<-ctx.Done()
 
-	log.Printf("Shutting down.")
-
+	log.Print("Shutting down.")
 }
 
 func TestBasic(t *testing.T) {
