@@ -24,6 +24,16 @@ const (
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+	return register(instance, service, domain, port, text, ifaces, false)
+}
+
+// RegisterDynamic registers a service by the given arguments. This call will take the system's hostname
+// and look up IPs as requests come in on a particular interface.
+func RegisterDynamic(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+	return register(instance, service, domain, port, text, ifaces, true)
+}
+
+func register(instance, service, domain string, port int, text []string, ifaces []net.Interface, dynamic bool) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -57,14 +67,16 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		ifaces = listMulticastInterfaces()
 	}
 
-	for _, iface := range ifaces {
-		v4, v6 := addrsForInterface(&iface)
-		entry.AddrIPv4 = append(entry.AddrIPv4, v4...)
-		entry.AddrIPv6 = append(entry.AddrIPv6, v6...)
-	}
+	if !dynamic {
+		for _, iface := range ifaces {
+			v4, v6 := addrsForInterface(&iface)
+			entry.AddrIPv4 = append(entry.AddrIPv4, v4...)
+			entry.AddrIPv6 = append(entry.AddrIPv6, v6...)
+		}
 
-	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
-		return nil, fmt.Errorf("could not determine host IP addresses")
+		if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
+			return nil, fmt.Errorf("could not determine host IP addresses")
+		}
 	}
 
 	s, err := newServer(ifaces)
