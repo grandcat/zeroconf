@@ -94,7 +94,7 @@ func NewResolver(options ...ClientOption) (*Resolver, error) {
 
 // Browse for all services of a given type in a given domain.
 func (r *Resolver) Browse(ctx context.Context, service, domain string, entries chan<- *ServiceEntry) error {
-	params := defaultParams(service)
+	params := defaultParams("", service, "local")
 	if domain != "" {
 		params.Domain = domain
 	}
@@ -127,11 +127,7 @@ func (r *Resolver) startClient(ctx context.Context, params *lookupParams) error 
 
 // Lookup a specific service by its name and type in a given domain.
 func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string, entries chan<- *ServiceEntry) error {
-	params := defaultParams(service)
-	params.Instance = instance
-	if domain != "" {
-		params.Domain = domain
-	}
+	params := defaultParams(instance, service, domain)
 	params.Entries = entries
 	ctx, cancel := context.WithCancel(ctx)
 	panicCapturingGo(func() { r.c.mainloop(ctx, params) })
@@ -170,8 +166,8 @@ func (r *Resolver) Shutdown() {
 }
 
 // defaultParams returns a default set of QueryParams.
-func defaultParams(service string) *lookupParams {
-	return newLookupParams("", service, "local", false, make(chan *ServiceEntry))
+func defaultParams(instance, service, domain string) *lookupParams {
+	return newLookupParams(instance, service, domain, false, make(chan *ServiceEntry))
 }
 
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
