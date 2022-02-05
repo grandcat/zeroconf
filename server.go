@@ -140,7 +140,9 @@ func newServerForService(entry *ServiceEntry, ifaces []net.Interface) (*Server, 
 	s.service = entry
 	s.startReceivers()
 	s.shutdownEnd.Add(1)
+	s.startupWait.Add(1)
 	managedGo(s.probe, s.shutdownEnd.Done)
+	s.startupWait.Wait()
 
 	return s, nil
 }
@@ -162,6 +164,7 @@ type Server struct {
 	shutdownEnd       sync.WaitGroup
 	isShutdown        bool
 	ttl               uint32
+	startupWait       sync.WaitGroup
 }
 
 // Constructs server structure
@@ -195,12 +198,26 @@ func newServer(ifaces []net.Interface) (*Server, error) {
 // startReceivers starts both IPv4/6 receiver loops and and waits for the shutdown signal from exit channel
 func (s *Server) startReceivers() {
 	if s.ipv4conn != nil {
+		s.startupWait.Add(1)
 		s.shutdownEnd.Add(1)
-		managedGo(func() { s.recv4(s.ipv4conn) }, s.shutdownEnd.Done)
+		var nextInstance bool
+		managedGo(func() {
+			defer func() {
+				nextInstance = true
+			}()
+			s.recv4(s.ipv4conn, !nextInstance)
+		}, s.shutdownEnd.Done)
 	}
 	if s.ipv6conn != nil {
 		s.shutdownEnd.Add(1)
-		managedGo(func() { s.recv6(s.ipv6conn) }, s.shutdownEnd.Done)
+		s.startupWait.Add(1)
+		var nextInstance bool
+		managedGo(func() {
+			defer func() {
+				nextInstance = true
+			}()
+			s.recv6(s.ipv6conn, !nextInstance)
+		}, s.shutdownEnd.Done)
 	}
 }
 
@@ -247,16 +264,21 @@ func (s *Server) shutdown() error {
 }
 
 // recv is a long running routine to receive packets from an interface
-func (s *Server) recv4(c *ipv4.PacketConn) {
+func (s *Server) recv4(c *ipv4.PacketConn, firstInstance bool) {
 	if c == nil {
 		return
 	}
+	firstRecv := firstInstance
 	buf := make([]byte, 65536)
 	for {
 		select {
 		case <-s.shutdownCtx.Done():
 			return
 		default:
+			if firstRecv {
+				s.startupWait.Done()
+				firstRecv = false
+			}
 			var ifIndex int
 			n, cm, from, err := c.ReadFrom(buf)
 			if err != nil {
@@ -271,16 +293,21 @@ func (s *Server) recv4(c *ipv4.PacketConn) {
 }
 
 // recv is a long running routine to receive packets from an interface
-func (s *Server) recv6(c *ipv6.PacketConn) {
+func (s *Server) recv6(c *ipv6.PacketConn, firstInstance bool) {
 	if c == nil {
 		return
 	}
+	firstRecv := firstInstance
 	buf := make([]byte, 65536)
 	for {
 		select {
 		case <-s.shutdownCtx.Done():
 			return
 		default:
+			if firstRecv {
+				s.startupWait.Done()
+				firstRecv = false
+			}
 			var ifIndex int
 			n, cm, from, err := c.ReadFrom(buf)
 			if err != nil {
@@ -568,6 +595,9 @@ func (s *Server) probe() {
 	for i := 0; i < multicastRepetitions; i++ {
 		if err := s.multicastResponse(q, 0); err != nil {
 			log.Println("[ERR] zeroconf: failed to send probe:", err.Error())
+		}
+		if i == 0 {
+			s.startupWait.Done()
 		}
 		if !selectContextOrWait(s.shutdownCtx, time.Duration(randomizer.Intn(250))*time.Millisecond) {
 			return
