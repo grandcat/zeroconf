@@ -29,8 +29,9 @@ const (
 )
 
 type clientOpts struct {
-	listenOn IPType
-	ifaces   []net.Interface
+	listenOn   IPType
+	acceptOnly IPType
+	ifaces     []net.Interface
 }
 
 // ClientOption fills the option struct to configure intefaces, etc.
@@ -44,6 +45,13 @@ type ClientOption func(*clientOpts)
 func SelectIPTraffic(t IPType) ClientOption {
 	return func(o *clientOpts) {
 		o.listenOn = t
+	}
+}
+
+// SelectIPRecordType selects the type of IPs entries should only contain.
+func SelectIPRecordType(t IPType) ClientOption {
+	return func(o *clientOpts) {
+		o.acceptOnly = t
 	}
 }
 
@@ -70,7 +78,8 @@ type Resolver struct {
 func NewResolver(options ...ClientOption) (*Resolver, error) {
 	// Apply default configuration and load supplied options.
 	var conf = clientOpts{
-		listenOn: IPv4AndIPv6,
+		listenOn:   IPv4AndIPv6,
+		acceptOnly: IPv4AndIPv6,
 	}
 	for _, o := range options {
 		if o != nil {
@@ -177,6 +186,7 @@ type client struct {
 	ipv4conn    *ipv4.PacketConn
 	ipv6conn    *ipv6.PacketConn
 	ifaces      []net.Interface
+	acceptOnly  IPType
 }
 
 // Client structure constructor
@@ -214,6 +224,7 @@ func newClient(
 		ipv4conn:    ipv4conn,
 		ipv6conn:    ipv6conn,
 		ifaces:      ifaces,
+		acceptOnly:  opts.acceptOnly,
 	}, nil
 }
 
@@ -301,15 +312,19 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 				for _, answer := range sections {
 					switch rr := answer.(type) {
 					case *dns.A:
-						for k, e := range entries {
-							if e.HostName == rr.Hdr.Name {
-								entries[k].AddrIPv4 = append(entries[k].AddrIPv4, rr.A)
+						if (c.acceptOnly & IPv4) > 0 {
+							for k, e := range entries {
+								if e.HostName == rr.Hdr.Name {
+									entries[k].AddrIPv4 = append(entries[k].AddrIPv4, rr.A)
+								}
 							}
 						}
 					case *dns.AAAA:
-						for k, e := range entries {
-							if e.HostName == rr.Hdr.Name {
-								entries[k].AddrIPv6 = append(entries[k].AddrIPv6, rr.AAAA)
+						if (c.acceptOnly & IPv6) > 0 {
+							for k, e := range entries {
+								if e.HostName == rr.Hdr.Name {
+									entries[k].AddrIPv6 = append(entries[k].AddrIPv6, rr.AAAA)
+								}
 							}
 						}
 					}
