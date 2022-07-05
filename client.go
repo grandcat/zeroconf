@@ -96,6 +96,7 @@ func (r *Resolver) Browse(ctx context.Context, service, domain string, entries c
 		params.Domain = domain
 	}
 	params.Entries = entries
+	params.isBrowsing = true
 	ctx, cancel := context.WithCancel(ctx)
 	go r.c.mainloop(ctx, params)
 
@@ -143,8 +144,8 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 }
 
 // defaultParams returns a default set of QueryParams.
-func defaultParams(service string) *LookupParams {
-	return NewLookupParams("", service, "local", make(chan *ServiceEntry))
+func defaultParams(service string) *lookupParams {
+	return newLookupParams("", service, "local", false, make(chan *ServiceEntry))
 }
 
 // Client structure encapsulates both IPv4/IPv6 UDP connections.
@@ -187,7 +188,7 @@ func newClient(opts clientOpts) (*client, error) {
 }
 
 // Start listeners and waits for the shutdown signal from exit channel
-func (c *client) mainloop(ctx context.Context, params *LookupParams) {
+func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 	// start listening for responses
 	msgCh := make(chan *dns.Msg, 32)
 	if c.ipv4conn != nil {
@@ -303,10 +304,10 @@ func (c *client) mainloop(ctx context.Context, params *LookupParams) {
 				// service entry.
 				params.Entries <- e
 				sentEntries[k] = e
-				params.disableProbing()
+				if !params.isBrowsing {
+					params.disableProbing()
+				}
 			}
-			// reset entries
-			entries = make(map[string]*ServiceEntry)
 		}
 	}
 }
@@ -377,28 +378,32 @@ func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *dns.Msg) {
 // the main processing loop or some timeout/cancel fires.
 // TODO: move error reporting to shutdown function as periodicQuery is called from
 // go routine context.
-func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error {
-	if params.stopProbing == nil {
-		return nil
-	}
-
+func (c *client) periodicQuery(ctx context.Context, params *lookupParams) error {
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 4 * time.Second
 	bo.MaxInterval = 60 * time.Second
+	bo.MaxElapsedTime = 0
 	bo.Reset()
 
-	for {
-		// Do periodic query.
-		if err := c.query(params); err != nil {
-			return err
+	var timer *time.Timer
+	defer func() {
+		if timer != nil {
+			timer.Stop()
 		}
+	}()
+	for {
 		// Backoff and cancel logic.
 		wait := bo.NextBackOff()
 		if wait == backoff.Stop {
 			return fmt.Errorf("periodicQuery: abort due to timeout")
 		}
+		if timer == nil {
+			timer = time.NewTimer(wait)
+		} else {
+			timer.Reset(wait)
+		}
 		select {
-		case <-time.After(wait):
+		case <-timer.C:
 			// Wait for next iteration.
 		case <-params.stopProbing:
 			// Chan is closed (or happened in the past).
@@ -406,15 +411,17 @@ func (c *client) periodicQuery(ctx context.Context, params *LookupParams) error 
 			return nil
 		case <-ctx.Done():
 			return ctx.Err()
-
+		}
+		// Do periodic query.
+		if err := c.query(params); err != nil {
+			return err
 		}
 	}
-
 }
 
 // Performs the actual query by service name (browse) or service instance name (lookup),
 // start response listeners goroutines and loops over the entries channel.
-func (c *client) query(params *LookupParams) error {
+func (c *client) query(params *lookupParams) error {
 	var serviceName, serviceInstanceName string
 	serviceName = fmt.Sprintf("%s.%s.", trimDot(params.Service), trimDot(params.Domain))
 
@@ -423,8 +430,8 @@ func (c *client) query(params *LookupParams) error {
 	if params.Instance != "" { // service instance name lookup
 		serviceInstanceName = fmt.Sprintf("%s.%s", params.Instance, serviceName)
 		m.Question = []dns.Question{
-			dns.Question{serviceInstanceName, dns.TypeSRV, dns.ClassINET},
-			dns.Question{serviceInstanceName, dns.TypeTXT, dns.ClassINET},
+			{Name: serviceInstanceName, Qtype: dns.TypeSRV, Qclass: dns.ClassINET},
+			{Name: serviceInstanceName, Qtype: dns.TypeTXT, Qclass: dns.ClassINET},
 		}
 	} else if len(params.Subtypes) > 0 { // service subtype browse
 		m.SetQuestion(params.Subtypes[0], dns.TypePTR)

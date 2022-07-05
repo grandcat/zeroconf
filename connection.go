@@ -44,6 +44,7 @@ func joinUdp6Multicast(interfaces []net.Interface, filter FilterFunc) (*ipv6.Pac
 	// Join multicast groups to receive announcements
 	pkConn := ipv6.NewPacketConn(udpConn)
 	pkConn.SetControlMessage(ipv6.FlagInterface, true)
+	_ = pkConn.SetMulticastHopLimit(255)
 
 	if len(interfaces) == 0 {
 		interfaces = listMulticastInterfaces()
@@ -82,6 +83,7 @@ func joinUdp4Multicast(interfaces []net.Interface, filter FilterFunc) (*ipv4.Pac
 	// Join multicast groups to receive announcements
 	pkConn := ipv4.NewPacketConn(udpConn)
 	pkConn.SetControlMessage(ipv4.FlagInterface, true)
+	_ = pkConn.SetMulticastTTL(255)
 
 	if len(interfaces) == 0 {
 		interfaces = listMulticastInterfaces()

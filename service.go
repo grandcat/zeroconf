@@ -65,32 +65,36 @@ func NewServiceRecord(instance, service string, domain string) *ServiceRecord {
 	return s
 }
 
-// LookupParams contains configurable properties to create a service discovery request
-type LookupParams struct {
+// lookupParams contains configurable properties to create a service discovery request
+type lookupParams struct {
 	ServiceRecord
 	Entries chan<- *ServiceEntry // Entries Channel
 
+	isBrowsing  bool
 	stopProbing chan struct{}
 	once        sync.Once
 }
 
-// NewLookupParams constructs a LookupParams.
-func NewLookupParams(instance, service, domain string, entries chan<- *ServiceEntry) *LookupParams {
-	return &LookupParams{
+// newLookupParams constructs a lookupParams.
+func newLookupParams(instance, service, domain string, isBrowsing bool, entries chan<- *ServiceEntry) *lookupParams {
+	p := &lookupParams{
 		ServiceRecord: *NewServiceRecord(instance, service, domain),
 		Entries:       entries,
-
-		stopProbing: make(chan struct{}),
+		isBrowsing:    isBrowsing,
 	}
+	if !isBrowsing {
+		p.stopProbing = make(chan struct{})
+	}
+	return p
 }
 
 // Notify subscriber that no more entries will arrive. Mostly caused
 // by an expired context.
-func (l *LookupParams) done() {
+func (l *lookupParams) done() {
 	close(l.Entries)
 }
 
-func (l *LookupParams) disableProbing() {
+func (l *lookupParams) disableProbing() {
 	l.once.Do(func() { close(l.stopProbing) })
 }
 
