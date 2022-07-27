@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -721,26 +722,62 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 		return err
 	}
 	if s.ipv4conn != nil {
+		// See https://pkg.go.dev/golang.org/x/net/ipv4#pkg-note-BUG
+		// As of Golang 1.18.4
+		// On Windows, the ControlMessage for ReadFrom and WriteTo methods of PacketConn is not implemented.
 		var wcm ipv4.ControlMessage
 		if ifIndex != 0 {
-			wcm.IfIndex = ifIndex
+			switch runtime.GOOS {
+			case "darwin", "ios", "linux":
+				wcm.IfIndex = ifIndex
+			default:
+				iface, _ := net.InterfaceByIndex(ifIndex)
+				if err := s.ipv4conn.SetMulticastInterface(iface); err != nil {
+					log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+				}
+			}
 			s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 		} else {
 			for _, intf := range s.ifaces {
-				wcm.IfIndex = intf.Index
+				switch runtime.GOOS {
+				case "darwin", "ios", "linux":
+					wcm.IfIndex = intf.Index
+				default:
+					if err := s.ipv4conn.SetMulticastInterface(&intf); err != nil {
+						log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+					}
+				}
 				s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 			}
 		}
 	}
 
 	if s.ipv6conn != nil {
+		// See https://pkg.go.dev/golang.org/x/net/ipv6#pkg-note-BUG
+		// As of Golang 1.18.4
+		// On Windows, the ControlMessage for ReadFrom and WriteTo methods of PacketConn is not implemented.
 		var wcm ipv6.ControlMessage
 		if ifIndex != 0 {
-			wcm.IfIndex = ifIndex
+			switch runtime.GOOS {
+			case "darwin", "ios", "linux":
+				wcm.IfIndex = ifIndex
+			default:
+				iface, _ := net.InterfaceByIndex(ifIndex)
+				if err := s.ipv6conn.SetMulticastInterface(iface); err != nil {
+					log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+				}
+			}
 			s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 		} else {
 			for _, intf := range s.ifaces {
-				wcm.IfIndex = intf.Index
+				switch runtime.GOOS {
+				case "darwin", "ios", "linux":
+					wcm.IfIndex = intf.Index
+				default:
+					if err := s.ipv6conn.SetMulticastInterface(&intf); err != nil {
+						log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+					}
+				}
 				s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 			}
 		}

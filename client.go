@@ -3,7 +3,9 @@ package zeroconf
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
+	"runtime"
 	"strings"
 	"time"
 
@@ -443,21 +445,37 @@ func (c *client) sendQuery(msg *dns.Msg) error {
 		return err
 	}
 	if c.ipv4conn != nil {
+		// See https://pkg.go.dev/golang.org/x/net/ipv4#pkg-note-BUG
+		// As of Golang 1.18.4
+		// On Windows, the ControlMessage for ReadFrom and WriteTo methods of PacketConn is not implemented.
+		var wcm ipv4.ControlMessage
 		for ifi := range c.ifaces {
-			if err := c.ipv4conn.SetMulticastInterface(&c.ifaces[ifi]); err != nil {
-				// log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
-				continue
+			switch runtime.GOOS {
+			case "darwin", "ios", "linux":
+				wcm.IfIndex = c.ifaces[ifi].Index
+			default:
+				if err := c.ipv4conn.SetMulticastInterface(&c.ifaces[ifi]); err != nil {
+					log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+				}
 			}
-			c.ipv4conn.WriteTo(buf, nil, ipv4Addr)
+			c.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
 		}
 	}
 	if c.ipv6conn != nil {
+		// See https://pkg.go.dev/golang.org/x/net/ipv6#pkg-note-BUG
+		// As of Golang 1.18.4
+		// On Windows, the ControlMessage for ReadFrom and WriteTo methods of PacketConn is not implemented.
+		var wcm ipv6.ControlMessage
 		for ifi := range c.ifaces {
-			if err := c.ipv6conn.SetMulticastInterface(&c.ifaces[ifi]); err != nil {
-				// log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
-				continue
+			switch runtime.GOOS {
+			case "darwin", "ios", "linux":
+				wcm.IfIndex = c.ifaces[ifi].Index
+			default:
+				if err := c.ipv6conn.SetMulticastInterface(&c.ifaces[ifi]); err != nil {
+					log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+				}
 			}
-			c.ipv6conn.WriteTo(buf, nil, ipv6Addr)
+			c.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
 		}
 	}
 	return nil
