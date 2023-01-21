@@ -6,6 +6,8 @@ import (
 
 	"golang.org/x/net/ipv4"
 	"golang.org/x/net/ipv6"
+
+	reuse "github.com/libp2p/go-reuseport"
 )
 
 var (
@@ -19,8 +21,7 @@ var (
 		Port: 5353,
 	}
 	mdnsWildcardAddrIPv6 = &net.UDPAddr{
-		IP: net.ParseIP("ff02::"),
-		// IP:   net.ParseIP("fd00::12d3:26e7:48db:e7d"),
+		IP:   net.ParseIP("ff02::"),
 		Port: 5353,
 	}
 
@@ -36,7 +37,7 @@ var (
 )
 
 func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
-	udpConn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
+	udpConn, err := reuse.ListenPacket("udp6", mdnsWildcardAddrIPv6.String())
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +68,7 @@ func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
 }
 
 func joinUdp4Multicast(interfaces []net.Interface) (*ipv4.PacketConn, error) {
-	udpConn, err := net.ListenUDP("udp4", mdnsWildcardAddrIPv4)
+	udpConn, err := reuse.ListenPacket("udp4", mdnsWildcardAddrIPv4.String())
 	if err != nil {
 		// log.Printf("[ERR] bonjour: Failed to bind to udp4 mutlicast: %v", err)
 		return nil, err
