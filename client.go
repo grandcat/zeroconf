@@ -28,13 +28,23 @@ const (
 	IPv4AndIPv6 = (IPv4 | IPv6) //< Default option.
 )
 
+type FilterFunc func(net.Interface) bool
+
 type clientOpts struct {
 	listenOn IPType
 	ifaces   []net.Interface
+	filter   FilterFunc
 }
 
 // ClientOption fills the option struct to configure intefaces, etc.
 type ClientOption func(*clientOpts)
+
+// SelectFilter
+func SelectFilter(filter FilterFunc) ClientOption {
+	return func(o *clientOpts) {
+		o.filter = filter
+	}
+}
 
 // SelectIPTraffic selects the type of IP packets (IPv4, IPv6, or both) this
 // instance listens for.
@@ -157,7 +167,7 @@ func newClient(opts clientOpts) (*client, error) {
 	var ipv4conn *ipv4.PacketConn
 	if (opts.listenOn & IPv4) > 0 {
 		var err error
-		ipv4conn, err = joinUdp4Multicast(ifaces)
+		ipv4conn, err = joinUdp4Multicast(ifaces, opts.filter)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +176,7 @@ func newClient(opts clientOpts) (*client, error) {
 	var ipv6conn *ipv6.PacketConn
 	if (opts.listenOn & IPv6) > 0 {
 		var err error
-		ipv6conn, err = joinUdp6Multicast(ifaces)
+		ipv6conn, err = joinUdp6Multicast(ifaces, opts.filter)
 		if err != nil {
 			return nil, err
 		}

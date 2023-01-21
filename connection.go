@@ -35,7 +35,7 @@ var (
 	}
 )
 
-func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
+func joinUdp6Multicast(interfaces []net.Interface, filter FilterFunc) (*ipv6.PacketConn, error) {
 	udpConn, err := net.ListenUDP("udp6", mdnsWildcardAddrIPv6)
 	if err != nil {
 		return nil, err
@@ -53,6 +53,13 @@ func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
 
 	var failedJoins int
 	for _, iface := range interfaces {
+		if filter != nil {
+			if !filter(iface) {
+				failedJoins++
+				continue
+			}
+		}
+
 		if err := pkConn.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv6}); err != nil {
 			// log.Println("Udp6 JoinGroup failed for iface ", iface)
 			failedJoins++
@@ -66,7 +73,7 @@ func joinUdp6Multicast(interfaces []net.Interface) (*ipv6.PacketConn, error) {
 	return pkConn, nil
 }
 
-func joinUdp4Multicast(interfaces []net.Interface) (*ipv4.PacketConn, error) {
+func joinUdp4Multicast(interfaces []net.Interface, filter FilterFunc) (*ipv4.PacketConn, error) {
 	udpConn, err := net.ListenUDP("udp4", mdnsWildcardAddrIPv4)
 	if err != nil {
 		// log.Printf("[ERR] bonjour: Failed to bind to udp4 mutlicast: %v", err)
@@ -85,6 +92,13 @@ func joinUdp4Multicast(interfaces []net.Interface) (*ipv4.PacketConn, error) {
 
 	var failedJoins int
 	for _, iface := range interfaces {
+		if filter != nil {
+			if !filter(iface) {
+				failedJoins++
+				continue
+			}
+		}
+
 		if err := pkConn.JoinGroup(&iface, &net.UDPAddr{IP: mdnsGroupIPv4}); err != nil {
 			// log.Println("Udp4 JoinGroup failed for iface ", iface)
 			failedJoins++
