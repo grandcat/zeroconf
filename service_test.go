@@ -74,7 +74,7 @@ func TestNoRegister(t *testing.T) {
 		t.Fatalf("Expected create resolver success, but got %v", err)
 	}
 
-	// before register, mdns resolve shuold not have any entry
+	// before register, mdns resolve should not have any entry
 	entries := make(chan *ServiceEntry)
 	go func(results <-chan *ServiceEntry) {
 		s := <-results

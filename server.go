@@ -22,13 +22,11 @@ const (
 	multicastRepetitions = 2
 )
 
-// Register a service by given arguments. This call will take the system's hostname
-// and lookup IP by that hostname.
-func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
-	entry := NewServiceEntry(instance, service, domain)
-	entry.Port = port
-	entry.Text = text
-
+// RegisterServiceEntry registers a service entry.
+// If no HostName is set, the system's hostname will be set and used.
+// If ifaces is empty, it will use all the available interfaces.
+// If neither AddrIPv4 nor AddrIPv6 is set, it will set and use all available IPs.
+func RegisterServiceEntry(entry *ServiceEntry, ifaces []net.Interface) (*Server, error) {
 	if entry.Instance == "" {
 		return nil, fmt.Errorf("missing service instance name")
 	}
@@ -50,18 +48,20 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 		}
 	}
 
-	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
-		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
+	if !strings.HasSuffix(trimDot(entry.HostName), trimDot(entry.Domain)) {
+		entry.HostName = trimDot(entry.HostName) + "." + trimDot(entry.Domain) + "."
 	}
 
 	if len(ifaces) == 0 {
 		ifaces = listMulticastInterfaces()
 	}
 
-	for _, iface := range ifaces {
-		v4, v6 := addrsForInterface(&iface)
-		entry.AddrIPv4 = append(entry.AddrIPv4, v4...)
-		entry.AddrIPv6 = append(entry.AddrIPv6, v6...)
+	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
+		for _, iface := range ifaces {
+			v4, v6 := addrsForInterface(&iface)
+			entry.AddrIPv4 = append(entry.AddrIPv4, v4...)
+			entry.AddrIPv6 = append(entry.AddrIPv6, v6...)
+		}
 	}
 
 	if entry.AddrIPv4 == nil && entry.AddrIPv6 == nil {
@@ -80,6 +80,16 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	return s, nil
 }
 
+// Register a service by given arguments. This call will take the system's hostname
+// and lookup IP by that hostname.
+func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+	entry := NewServiceEntry(instance, service, domain)
+	entry.Port = port
+	entry.Text = text
+
+	return RegisterServiceEntry(entry, ifaces)
+}
+
 // RegisterProxy registers a service proxy. This call will skip the hostname/IP lookup and
 // will use the provided values.
 func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface) (*Server, error) {
@@ -88,24 +98,8 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	entry.Text = text
 	entry.HostName = host
 
-	if entry.Instance == "" {
-		return nil, fmt.Errorf("missing service instance name")
-	}
-	if entry.Service == "" {
-		return nil, fmt.Errorf("missing service name")
-	}
 	if entry.HostName == "" {
 		return nil, fmt.Errorf("missing host name")
-	}
-	if entry.Domain == "" {
-		entry.Domain = "local"
-	}
-	if entry.Port == 0 {
-		return nil, fmt.Errorf("missing port")
-	}
-
-	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
-		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
 	}
 
 	for _, ip := range ips {
@@ -121,20 +115,7 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 		}
 	}
 
-	if len(ifaces) == 0 {
-		ifaces = listMulticastInterfaces()
-	}
-
-	s, err := newServer(ifaces)
-	if err != nil {
-		return nil, err
-	}
-
-	s.service = entry
-	go s.mainloop()
-	go s.probe()
-
-	return s, nil
+	return RegisterServiceEntry(entry, ifaces)
 }
 
 const (
