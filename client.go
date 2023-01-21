@@ -135,6 +135,61 @@ func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string,
 	return nil
 }
 
+// Resolve resolves the provided name over mdns to A/AAAA IP
+func (r *Resolver) Resolve(ctx context.Context, name string, qType uint16, entries chan<- *ServiceEntry) error {
+	if qType != dns.TypeA && qType != dns.TypeAAAA {
+		return fmt.Errorf("only A and AAAA records can be resolved")
+	}
+	lables := dns.SplitDomainName(name)
+	domain := lables[len(lables)-1]
+	hostname := trimDot(strings.TrimSuffix(name, domain+"."))
+	params := NewLookupParams("", hostname, domain, entries)
+	params.queryType = qType
+	ctx, cancel := context.WithCancel(ctx)
+	go r.c.mainloop(ctx, params)
+	err := r.c.query(params)
+	if err != nil {
+		// cancel mainloop
+		cancel()
+		return err
+	}
+	// If previous probe was ok, it should be fine now. In case of an error later on,
+	// the entries' queue is closed.
+	go func() {
+		if err := r.c.periodicQuery(ctx, params); err != nil {
+			cancel()
+		}
+	}()
+
+	return nil
+}
+
+// ResolveOnce like Resolve, but returns on the first response, which is usually expected if only one host on the network has a given name
+func (r *Resolver) ResolveOnce(ctx context.Context, name string, qType uint16) ([]net.IP, error) {
+	localCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	ip := make([]net.IP, 0, 1)
+
+	entries := make(chan *ServiceEntry)
+	go func(results <-chan *ServiceEntry) {
+		for entry := range results {
+			if name == entry.HostName {
+				ip = append(ip, entry.AddrIPv4...)
+				ip = append(ip, entry.AddrIPv6...)
+				cancel() // limits this resolve to a single response.
+			}
+		}
+	}(entries)
+
+	err := r.Resolve(localCtx, name, qType, entries)
+	if err != nil {
+		return nil, err
+	}
+
+	<-ctx.Done()
+	return ip, nil
+}
+
 // defaultParams returns a default set of QueryParams.
 func defaultParams(service string) *lookupParams {
 	return newLookupParams("", service, "local", false, make(chan *ServiceEntry))
@@ -250,6 +305,34 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 					}
 					entries[rr.Hdr.Name].Text = rr.Txt
 					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
+				case *dns.A:
+					if params.queryType != dns.TypeNone {
+						if params.ServiceName() != rr.Hdr.Name {
+							continue
+						}
+						if _, ok := entries[rr.Hdr.Name]; !ok {
+							entries[rr.Hdr.Name] = NewServiceEntry(
+								trimDot(strings.Replace(rr.Hdr.Name, params.ServiceName(), "", 1)),
+								params.Service,
+								params.Domain)
+						}
+						entries[rr.Hdr.Name].HostName = rr.Hdr.Name
+						entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
+					}
+				case *dns.AAAA:
+					if params.queryType != dns.TypeNone {
+						if params.ServiceName() != rr.Hdr.Name {
+							continue
+						}
+						if _, ok := entries[rr.Hdr.Name]; !ok {
+							entries[rr.Hdr.Name] = NewServiceEntry(
+								trimDot(strings.Replace(rr.Hdr.Name, params.ServiceName(), "", 1)),
+								params.Service,
+								params.Domain)
+						}
+						entries[rr.Hdr.Name].HostName = rr.Hdr.Name
+						entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
+					}
 				}
 			}
 			// Associate IPs in a second round as other fields should be filled by now.
@@ -419,7 +502,10 @@ func (c *client) query(params *lookupParams) error {
 
 	// send the query
 	m := new(dns.Msg)
-	if params.Instance != "" { // service instance name lookup
+	if params.queryType != dns.TypeNone {
+		// resolve lookup
+		m.SetQuestion(serviceName, params.queryType)
+	} else if params.Instance != "" { // service instance name lookup
 		serviceInstanceName = fmt.Sprintf("%s.%s", params.Instance, serviceName)
 		m.Question = []dns.Question{
 			{Name: serviceInstanceName, Qtype: dns.TypeSRV, Qclass: dns.ClassINET},
