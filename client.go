@@ -179,6 +179,8 @@ func newClient(opts clientOpts) (*client, error) {
 	}, nil
 }
 
+var cleanupFreq = 10 * time.Second
+
 // Start listeners and waits for the shutdown signal from exit channel
 func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 	// start listening for responses
@@ -191,16 +193,28 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 	}
 
 	// Iterate through channels from listeners goroutines
-	var entries, sentEntries map[string]*ServiceEntry
-	sentEntries = make(map[string]*ServiceEntry)
+	var entries map[string]*ServiceEntry
+	sentEntries := make(map[string]*ServiceEntry)
+
+	ticker := time.NewTicker(cleanupFreq)
+	defer ticker.Stop()
 	for {
+		var now time.Time
 		select {
 		case <-ctx.Done():
 			// Context expired. Notify subscriber that we are done here.
 			params.done()
 			c.shutdown()
 			return
+		case t := <-ticker.C:
+			for k, e := range sentEntries {
+				if t.After(e.Expiry) {
+					delete(sentEntries, k)
+				}
+			}
+			continue
 		case msg := <-msgCh:
+			now = time.Now()
 			entries = make(map[string]*ServiceEntry)
 			sections := append(msg.Answer, msg.Ns...)
 			sections = append(sections, msg.Extra...)
@@ -220,7 +234,7 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 							params.Service,
 							params.Domain)
 					}
-					entries[rr.Ptr].TTL = rr.Hdr.Ttl
+					entries[rr.Ptr].Expiry = now.Add(time.Duration(rr.Hdr.Ttl) * time.Second)
 				case *dns.SRV:
 					if params.ServiceInstanceName() != "" && params.ServiceInstanceName() != rr.Hdr.Name {
 						continue
@@ -235,7 +249,7 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 					}
 					entries[rr.Hdr.Name].HostName = rr.Target
 					entries[rr.Hdr.Name].Port = int(rr.Port)
-					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
+					entries[rr.Hdr.Name].Expiry = now.Add(time.Duration(rr.Hdr.Ttl) * time.Second)
 				case *dns.TXT:
 					if params.ServiceInstanceName() != "" && params.ServiceInstanceName() != rr.Hdr.Name {
 						continue
@@ -249,7 +263,7 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 							params.Domain)
 					}
 					entries[rr.Hdr.Name].Text = rr.Txt
-					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
+					entries[rr.Hdr.Name].Expiry = now.Add(time.Duration(rr.Hdr.Ttl) * time.Second)
 				}
 			}
 			// Associate IPs in a second round as other fields should be filled by now.
@@ -273,7 +287,7 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 
 		if len(entries) > 0 {
 			for k, e := range entries {
-				if e.TTL == 0 {
+				if !e.Expiry.After(now) {
 					delete(entries, k)
 					delete(sentEntries, k)
 					continue
