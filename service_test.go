@@ -17,9 +17,16 @@ var (
 	mdnsPort    = 8888
 )
 
-func startMDNS(ctx context.Context, port int, name, service, domain string) {
+func startMDNS(ctx context.Context, port int, name, service, domain string, loopback bool) {
 	// 5353 is default mdns port
-	server, err := Register(name, service, domain, port, []string{"txtv=0", "lo=1", "la=2"}, nil)
+	var server *Server
+	var err error
+
+	if loopback {
+		server, err = RegisterWithLoopback(name, service, domain, port, []string{"txtv=0", "lo=1", "la=2"}, nil)
+	} else {
+		server, err = Register(name, service, domain, port, []string{"txtv=0", "lo=1", "la=2"}, nil)
+	}
 	if err != nil {
 		panic(errors.Wrap(err, "while registering mdns service"))
 	}
@@ -29,14 +36,42 @@ func startMDNS(ctx context.Context, port int, name, service, domain string) {
 	<-ctx.Done()
 
 	log.Printf("Shutting down.")
+}
 
+func verifyResult(expectedResult *ServiceEntry, expectLoopback bool, t *testing.T) {
+	if expectedResult.Domain != mdnsDomain {
+		t.Fatalf("Expected domain is %s, but got %s", mdnsDomain, expectedResult.Domain)
+	}
+	if expectedResult.Service != mdnsService {
+		t.Fatalf("Expected service is %s, but got %s", mdnsService, expectedResult.Service)
+	}
+	if expectedResult.Instance != mdnsName {
+		t.Fatalf("Expected instance is %s, but got %s", mdnsName, expectedResult.Instance)
+	}
+	if expectedResult.Port != mdnsPort {
+		t.Fatalf("Expected port is %d, but got %d", mdnsPort, expectedResult.Port)
+	}
+	foundLoopback := false
+	for _, addr := range expectedResult.AddrIPv4 {
+		if addr.IsLoopback() {
+			foundLoopback = true
+			break
+		}
+	}
+	if expectLoopback && !foundLoopback {
+		t.Fatal("Expected AddrIPv4 to include loopback")
+	}
+	if !expectLoopback && foundLoopback {
+		t.Fatal("Unexpected AddrIPv4 loopback result")
+	}
 }
 
 func TestBasic(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	go startMDNS(ctx, mdnsPort, mdnsName, mdnsService, mdnsDomain)
+	loopback := false
+	go startMDNS(ctx, mdnsPort, mdnsName, mdnsService, mdnsDomain, loopback)
 
 	time.Sleep(time.Second)
 
@@ -54,18 +89,33 @@ func TestBasic(t *testing.T) {
 		t.Fatalf("Expected number of service entries is 1, but got %d", len(entries))
 	}
 	result := <-entries
-	if result.Domain != mdnsDomain {
-		t.Fatalf("Expected domain is %s, but got %s", mdnsDomain, result.Domain)
+	verifyResult(result, loopback, t)
+}
+
+func TestWithLoopback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	loopback := true
+	go startMDNS(ctx, mdnsPort, mdnsName, mdnsService, mdnsDomain, loopback)
+
+	time.Sleep(time.Second)
+
+	resolver, err := NewResolver(nil)
+	if err != nil {
+		t.Fatalf("Expected create resolver success, but got %v", err)
 	}
-	if result.Service != mdnsService {
-		t.Fatalf("Expected service is %s, but got %s", mdnsService, result.Service)
+	entries := make(chan *ServiceEntry, 100)
+	if err := resolver.Browse(ctx, mdnsService, mdnsDomain, entries); err != nil {
+		t.Fatalf("Expected browse success, but got %v", err)
 	}
-	if result.Instance != mdnsName {
-		t.Fatalf("Expected instance is %s, but got %s", mdnsName, result.Instance)
+	<-ctx.Done()
+
+	if len(entries) != 1 {
+		t.Fatalf("Expected number of service entries is 1, but got %d", len(entries))
 	}
-	if result.Port != mdnsPort {
-		t.Fatalf("Expected port is %d, but got %d", mdnsPort, result.Port)
-	}
+	result := <-entries
+	verifyResult(result, loopback, t)
 }
 
 func TestNoRegister(t *testing.T) {
@@ -96,7 +146,7 @@ func TestSubtype(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		go startMDNS(ctx, mdnsPort, mdnsName, mdnsSubtype, mdnsDomain)
+		go startMDNS(ctx, mdnsPort, mdnsName, mdnsSubtype, mdnsDomain, false)
 
 		time.Sleep(time.Second)
 
@@ -132,7 +182,7 @@ func TestSubtype(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
-		go startMDNS(ctx, mdnsPort, mdnsName, mdnsSubtype, mdnsDomain)
+		go startMDNS(ctx, mdnsPort, mdnsName, mdnsSubtype, mdnsDomain, false)
 
 		time.Sleep(time.Second)
 

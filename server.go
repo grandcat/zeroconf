@@ -23,8 +23,17 @@ const (
 )
 
 // Register a service by given arguments. This call will take the system's hostname
-// and lookup IP by that hostname.
+// This call will take the system's hostname and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+	return register(instance, service, domain, port, text, ifaces, false)
+}
+
+// RegisterWithLoopback registers a service by given arguments but also registers on local loopback interface.
+// and lookup IP by that hostname.
+func RegisterWithLoopback(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
+	return register(instance, service, domain, port, text, ifaces, true)
+}
+func register(instance, service, domain string, port int, text []string, ifaces []net.Interface, loopback bool) (*Server, error) {
 	entry := NewServiceEntry(instance, service, domain)
 	entry.Port = port
 	entry.Text = text
@@ -59,7 +68,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	}
 
 	for _, iface := range ifaces {
-		v4, v6 := addrsForInterface(&iface)
+		v4, v6 := addrsForInterface(&iface, loopback)
 		entry.AddrIPv4 = append(entry.AddrIPv4, v4...)
 		entry.AddrIPv6 = append(entry.AddrIPv6, v6...)
 	}
@@ -72,7 +81,7 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	if err != nil {
 		return nil, err
 	}
-
+	s.loopback = loopback
 	s.service = entry
 	go s.mainloop()
 	go s.probe()
@@ -147,6 +156,7 @@ type Server struct {
 	ipv4conn *ipv4.PacketConn
 	ipv6conn *ipv6.PacketConn
 	ifaces   []net.Interface
+	loopback bool
 
 	shouldShutdown chan struct{}
 	shutdownLock   sync.Mutex
@@ -622,7 +632,7 @@ func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int, flushCache 
 	if len(v4) == 0 && len(v6) == 0 {
 		iface, _ := net.InterfaceByIndex(ifIndex)
 		if iface != nil {
-			a4, a6 := addrsForInterface(iface)
+			a4, a6 := addrsForInterface(iface, s.loopback)
 			v4 = append(v4, a4...)
 			v6 = append(v6, a6...)
 		}
@@ -664,20 +674,27 @@ func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int, flushCache 
 	return list
 }
 
-func addrsForInterface(iface *net.Interface) ([]net.IP, []net.IP) {
+func addrsForInterface(iface *net.Interface, loopback bool) ([]net.IP, []net.IP) {
 	var v4, v6, v6local []net.IP
 	addrs, _ := iface.Addrs()
 	for _, address := range addrs {
-		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
-			if ipnet.IP.To4() != nil {
-				v4 = append(v4, ipnet.IP)
-			} else {
-				switch ip := ipnet.IP.To16(); ip != nil {
-				case ip.IsGlobalUnicast():
-					v6 = append(v6, ipnet.IP)
-				case ip.IsLinkLocalUnicast():
-					v6local = append(v6local, ipnet.IP)
-				}
+		ipnet, ok := address.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		if ipnet.IP.IsLoopback() && !loopback {
+			// loopback is disabled - skip
+			continue
+		}
+
+		if ipnet.IP.To4() != nil {
+			v4 = append(v4, ipnet.IP)
+		} else {
+			switch ip := ipnet.IP.To16(); ip != nil {
+			case ip.IsGlobalUnicast():
+				v6 = append(v6, ipnet.IP)
+			case ip.IsLinkLocalUnicast():
+				v6local = append(v6local, ipnet.IP)
 			}
 		}
 	}
