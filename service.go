@@ -70,6 +70,7 @@ type lookupParams struct {
 	ServiceRecord
 	Entries chan<- *ServiceEntry // Entries Channel
 
+	Strategy    LookupStrategy
 	isBrowsing  bool
 	stopProbing chan struct{}
 	once        sync.Once

@@ -81,14 +81,39 @@ func NewResolver(options ...ClientOption) (*Resolver, error) {
 	}, nil
 }
 
+// Specify strategy to get A and AAAA records.
+// TODO: support stategy to Lookup* functions.
+type LookupStrategy struct {
+	// If true, wait until the ipv4 query is responded even if ipv6 query is responded.
+	// If false, query may be responded even if ipv4 query is not responded.
+	ForceIPv4 bool
+	// If true, wait until the ipv6 query is responded even if ipv4 query is responded.
+	// If false, query may be responded even if ipv6 query is not responded.
+	ForceIPv6 bool
+}
+
+var (
+	ReturnFirst = LookupStrategy{false, false}
+	ForceIPv4   = LookupStrategy{true, false}
+	ForceIPv6   = LookupStrategy{false, true}
+	ForceBoth   = LookupStrategy{true, true}
+)
+
 // Browse for all services of a given type in a given domain.
+// This method is left for backward compatibility.
 func (r *Resolver) Browse(ctx context.Context, service, domain string, entries chan<- *ServiceEntry) error {
+	return r.BrowseWithStrategy(ctx, service, domain, LookupStrategy{false, false}, entries)
+}
+
+// Browse for all services of a given type in a given domain.
+func (r *Resolver) BrowseWithStrategy(ctx context.Context, service, domain string, strategy LookupStrategy, entries chan<- *ServiceEntry) error {
 	params := defaultParams(service)
 	if domain != "" {
 		params.Domain = domain
 	}
 	params.Entries = entries
 	params.isBrowsing = true
+	params.Strategy = strategy
 	ctx, cancel := context.WithCancel(ctx)
 	go r.c.mainloop(ctx, params)
 
@@ -285,6 +310,14 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 				// If this is an DNS-SD query do not throw PTR away.
 				// It is expected to have only PTR for enumeration
 				if params.ServiceRecord.ServiceTypeName() != params.ServiceRecord.ServiceName() {
+					// wait based on lookup strategy
+					if params.Strategy.ForceIPv4 && len(e.AddrIPv4) == 0 {
+						continue
+					}
+					if params.Strategy.ForceIPv6 && len(e.AddrIPv6) == 0 {
+						continue
+					}
+
 					// Require at least one resolved IP address for ServiceEntry
 					// TODO: wait some more time as chances are high both will arrive.
 					if len(e.AddrIPv4) == 0 && len(e.AddrIPv6) == 0 {
