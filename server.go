@@ -25,24 +25,11 @@ const (
 // Register a service by given arguments. This call will take the system's hostname
 // and lookup IP by that hostname.
 func Register(instance, service, domain string, port int, text []string, ifaces []net.Interface) (*Server, error) {
-	entry := NewServiceEntry(instance, service, domain)
-	entry.Port = port
-	entry.Text = text
-
-	if entry.Instance == "" {
-		return nil, fmt.Errorf("missing service instance name")
-	}
-	if entry.Service == "" {
-		return nil, fmt.Errorf("missing service name")
-	}
-	if entry.Domain == "" {
-		entry.Domain = "local."
-	}
-	if entry.Port == 0 {
-		return nil, fmt.Errorf("missing port")
+	entry, err := newRegisterServiceEntry(instance, service, domain, port, text)
+	if err != nil {
+		return nil, err
 	}
 
-	var err error
 	if entry.HostName == "" {
 		entry.HostName, err = os.Hostname()
 		if err != nil {
@@ -83,25 +70,9 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 // RegisterProxy registers a service proxy. This call will skip the hostname/IP lookup and
 // will use the provided values.
 func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface) (*Server, error) {
-	entry := NewServiceEntry(instance, service, domain)
-	entry.Port = port
-	entry.Text = text
-	entry.HostName = host
-
-	if entry.Instance == "" {
-		return nil, fmt.Errorf("missing service instance name")
-	}
-	if entry.Service == "" {
-		return nil, fmt.Errorf("missing service name")
-	}
-	if entry.HostName == "" {
-		return nil, fmt.Errorf("missing host name")
-	}
-	if entry.Domain == "" {
-		entry.Domain = "local"
-	}
-	if entry.Port == 0 {
-		return nil, fmt.Errorf("missing port")
+	entry, err := newRegisterServiceEntry(instance, service, domain, port, text)
+	if err != nil {
+		return nil, err
 	}
 
 	if !strings.HasSuffix(trimDot(entry.HostName), entry.Domain) {
@@ -135,6 +106,30 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 	go s.probe()
 
 	return s, nil
+}
+
+// newRegisterServiceEntry returns a ServiceEntry with defaults substituted as required.
+func newRegisterServiceEntry(instance, service, domain string, port int, text []string) (*ServiceEntry, error) {
+	// Required parameters
+	if instance == "" {
+		return nil, fmt.Errorf("missing service instance name")
+	}
+	if service == "" {
+		return nil, fmt.Errorf("missing service name")
+	}
+	if port == 0 {
+		return nil, fmt.Errorf("missing port")
+	}
+	// Defaulted parameters
+	if domain == "" {
+		domain = "local."
+	}
+
+	entry := NewServiceEntry(instance, service, domain)
+	entry.Port = port
+	entry.Text = text
+
+	return entry, nil
 }
 
 const (
@@ -525,7 +520,7 @@ func (s *Server) serviceTypeName(resp *dns.Msg, ttl uint32) {
 }
 
 // Perform probing & announcement
-//TODO: implement a proper probing & conflict resolution
+// TODO: implement a proper probing & conflict resolution
 func (s *Server) probe() {
 	q := new(dns.Msg)
 	q.SetQuestion(s.service.ServiceInstanceName(), dns.TypePTR)
