@@ -108,9 +108,16 @@ func listMulticastInterfaces() []net.Interface {
 		if (ifi.Flags & net.FlagUp) == 0 {
 			continue
 		}
-		if (ifi.Flags & net.FlagMulticast) > 0 {
-			interfaces = append(interfaces, ifi)
+		if (ifi.Flags & net.FlagMulticast) == 0 {
+			continue
 		}
+
+		// Prevents bind of the bridge's slave interface.
+		addrs, err := ifi.Addrs()
+		if err != nil || len(addrs) == 0 {
+			continue
+		}
+		interfaces = append(interfaces, ifi)
 	}
 
 	return interfaces
