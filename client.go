@@ -33,6 +33,13 @@ type clientOpts struct {
 	ifaces   []net.Interface
 }
 
+type Msg struct {
+	dns.Msg
+
+	ReceivedIfIndex int
+	ReceivedSrc     net.Addr
+}
+
 // ClientOption fills the option struct to configure intefaces, etc.
 type ClientOption func(*clientOpts)
 
@@ -182,7 +189,7 @@ func newClient(opts clientOpts) (*client, error) {
 // Start listeners and waits for the shutdown signal from exit channel
 func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 	// start listening for responses
-	msgCh := make(chan *dns.Msg, 32)
+	msgCh := make(chan *Msg, 32)
 	if c.ipv4conn != nil {
 		go c.recv(ctx, c.ipv4conn, msgCh)
 	}
@@ -220,6 +227,8 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 							params.Service,
 							params.Domain)
 					}
+					entries[rr.Ptr].ReceivedIfIndex = msg.ReceivedIfIndex
+					entries[rr.Ptr].ReceivedSrc = msg.ReceivedSrc
 					entries[rr.Ptr].TTL = rr.Hdr.Ttl
 				case *dns.SRV:
 					if params.ServiceInstanceName() != "" && params.ServiceInstanceName() != rr.Hdr.Name {
@@ -233,6 +242,8 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 							params.Service,
 							params.Domain)
 					}
+					entries[rr.Hdr.Name].ReceivedIfIndex = msg.ReceivedIfIndex
+					entries[rr.Hdr.Name].ReceivedSrc = msg.ReceivedSrc
 					entries[rr.Hdr.Name].HostName = rr.Target
 					entries[rr.Hdr.Name].Port = int(rr.Port)
 					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
@@ -248,6 +259,8 @@ func (c *client) mainloop(ctx context.Context, params *lookupParams) {
 							params.Service,
 							params.Domain)
 					}
+					entries[rr.Hdr.Name].ReceivedIfIndex = msg.ReceivedIfIndex
+					entries[rr.Hdr.Name].ReceivedSrc = msg.ReceivedSrc
 					entries[rr.Hdr.Name].Text = rr.Txt
 					entries[rr.Hdr.Name].TTL = rr.Hdr.Ttl
 				}
@@ -314,20 +327,28 @@ func (c *client) shutdown() {
 	}
 }
 
-// Data receiving routine reads from connection, unpacks packets into dns.Msg
+// Data receiving routine reads from connection, unpacks packets into Msg
 // structures and sends them to a given msgCh channel
-func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *dns.Msg) {
-	var readFrom func([]byte) (n int, src net.Addr, err error)
+func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *Msg) {
+	var readFrom func([]byte) (n int, ifIndex int, src net.Addr, err error)
 
 	switch pConn := l.(type) {
 	case *ipv6.PacketConn:
-		readFrom = func(b []byte) (n int, src net.Addr, err error) {
-			n, _, src, err = pConn.ReadFrom(b)
+		readFrom = func(b []byte) (n int, ifIndex int, src net.Addr, err error) {
+			var cm *ipv6.ControlMessage
+			n, cm, src, err = pConn.ReadFrom(b)
+			if cm != nil {
+				ifIndex = cm.IfIndex
+			}
 			return
 		}
 	case *ipv4.PacketConn:
-		readFrom = func(b []byte) (n int, src net.Addr, err error) {
-			n, _, src, err = pConn.ReadFrom(b)
+		readFrom = func(b []byte) (n int, ifIndex int, src net.Addr, err error) {
+			var cm *ipv4.ControlMessage
+			n, cm, src, err = pConn.ReadFrom(b)
+			if cm != nil {
+				ifIndex = cm.IfIndex
+			}
 			return
 		}
 
@@ -346,12 +367,15 @@ func (c *client) recv(ctx context.Context, l interface{}, msgCh chan *dns.Msg) {
 			return
 		}
 
-		n, _, err := readFrom(buf)
+		n, ifIndex, src, err := readFrom(buf)
 		if err != nil {
 			fatalErr = err
 			continue
 		}
-		msg := new(dns.Msg)
+		msg := &Msg{
+			ReceivedSrc:     src,
+			ReceivedIfIndex: ifIndex,
+		}
 		if err := msg.Unpack(buf[:n]); err != nil {
 			// log.Printf("[WARN] mdns: Failed to unpack packet: %v", err)
 			continue
