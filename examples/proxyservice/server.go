@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -25,7 +26,20 @@ var (
 func main() {
 	flag.Parse()
 
-	server, err := zeroconf.RegisterProxy(*name, *service, *domain, *port, *host, []string{*ip}, []string{"txtv=0", "lo=1", "la=2"}, nil)
+	ifaces, _ := net.Interfaces()
+
+	config := zeroconf.ProxyRegistrationConfig{
+		Instance: "GoZeroconfGo",
+		Service:  "_workstation._tcp",
+		Domain:   "local.",
+		Port:     42424,
+		Host:     "pc1",
+		IPs:      []string{"txtv=0", "lo=1", "la=2"},
+		Text:     []string{"key=value", "env=dev"},
+		Ifaces:   []net.Interface{ifaces[0]}, // use the first available interface
+	}
+
+	server, err := zeroconf.RegisterProxy(config)
 	if err != nil {
 		panic(err)
 	}

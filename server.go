@@ -19,7 +19,8 @@ import (
 
 const (
 	// Number of Multicast responses sent for a query message (default: 1 < x < 9)
-	multicastRepetitions = 2
+	multicastRepetitions    = 2
+	MulticastInterfaceError = "[WARN] mdns: Failed to set multicast interface: %v"
 )
 
 // Register a service by given arguments. This call will take the system's hostname
@@ -80,13 +81,24 @@ func Register(instance, service, domain string, port int, text []string, ifaces 
 	return s, nil
 }
 
+type ProxyRegistrationConfig struct {
+	Instance string
+	Service  string
+	Domain   string
+	Port     int
+	Host     string
+	IPs      []string
+	Text     []string
+	Ifaces   []net.Interface
+}
+
 // RegisterProxy registers a service proxy. This call will skip the hostname/IP lookup and
 // will use the provided values.
-func RegisterProxy(instance, service, domain string, port int, host string, ips []string, text []string, ifaces []net.Interface) (*Server, error) {
-	entry := NewServiceEntry(instance, service, domain)
-	entry.Port = port
-	entry.Text = text
-	entry.HostName = host
+func RegisterProxy(cfg ProxyRegistrationConfig) (*Server, error) {
+	entry := NewServiceEntry(cfg.Instance, cfg.Service, cfg.Domain)
+	entry.Port = cfg.Port
+	entry.Text = cfg.Text
+	entry.HostName = cfg.Host
 
 	if entry.Instance == "" {
 		return nil, fmt.Errorf("missing service instance name")
@@ -108,7 +120,7 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 		entry.HostName = fmt.Sprintf("%s.%s.", trimDot(entry.HostName), trimDot(entry.Domain))
 	}
 
-	for _, ip := range ips {
+	for _, ip := range cfg.IPs {
 		ipAddr := net.ParseIP(ip)
 		if ipAddr == nil {
 			return nil, fmt.Errorf("failed to parse given IP: %v", ip)
@@ -121,11 +133,11 @@ func RegisterProxy(instance, service, domain string, port int, host string, ips 
 		}
 	}
 
-	if len(ifaces) == 0 {
-		ifaces = listMulticastInterfaces()
+	if len(cfg.Ifaces) == 0 {
+		cfg.Ifaces = listMulticastInterfaces()
 	}
 
-	s, err := newServer(ifaces)
+	s, err := newServer(cfg.Ifaces)
 	if err != nil {
 		return nil, err
 	}
@@ -159,11 +171,11 @@ type Server struct {
 func newServer(ifaces []net.Interface) (*Server, error) {
 	ipv4conn, err4 := joinUdp4Multicast(ifaces)
 	if err4 != nil {
-		log.Printf("[zeroconf] no suitable IPv4 interface: %s", err4.Error())
+		log.Printf("[zeroconf] not suitable IPv4 interface: %s", err4.Error())
 	}
 	ipv6conn, err6 := joinUdp6Multicast(ifaces)
 	if err6 != nil {
-		log.Printf("[zeroconf] no suitable IPv6 interface: %s", err6.Error())
+		log.Printf("[zeroconf] not suitable IPv6 interface: %s", err6.Error())
 	}
 	if err4 != nil && err6 != nil {
 		// No supported interface left.
@@ -289,7 +301,6 @@ func (s *Server) recv6(c *ipv6.PacketConn) {
 func (s *Server) parsePacket(packet []byte, ifIndex int, from net.Addr) error {
 	var msg dns.Msg
 	if err := msg.Unpack(packet); err != nil {
-		// log.Printf("[ERR] zeroconf: Failed to unpack packet: %v", err)
 		return err
 	}
 	return s.handleQuery(&msg, ifIndex, from)
@@ -314,7 +325,6 @@ func (s *Server) handleQuery(query *dns.Msg, ifIndex int, from net.Addr) error {
 		resp.Answer = []dns.RR{}
 		resp.Extra = []dns.RR{}
 		if err = s.handleQuestion(q, &resp, query, ifIndex); err != nil {
-			// log.Printf("[ERR] zeroconf: failed to handle question %v: %v", q, err)
 			continue
 		}
 		// Check if there is an answer
@@ -344,24 +354,29 @@ func isKnownAnswer(resp *dns.Msg, query *dns.Msg) bool {
 		return false
 	}
 
-	if resp.Answer[0].Header().Rrtype != dns.TypePTR {
-		return false
-	}
-	answer := resp.Answer[0].(*dns.PTR)
-
-	for _, known := range query.Answer {
-		hdr := known.Header()
-		if hdr.Rrtype != answer.Hdr.Rrtype {
+	for _, answerRR := range resp.Answer {
+		if answerRR.Header().Rrtype != dns.TypePTR {
 			continue
 		}
-		ptr := known.(*dns.PTR)
-		if ptr.Ptr == answer.Ptr && hdr.Ttl >= answer.Hdr.Ttl/2 {
-			// log.Printf("skipping known answer: %v", ptr)
-			return true
+		answer := answerRR.(*dns.PTR)
+
+		matched := false
+		for _, known := range query.Answer {
+			if known.Header().Rrtype != dns.TypePTR {
+				continue
+			}
+			ptr := known.(*dns.PTR)
+			if ptr.Ptr == answer.Ptr && known.Header().Ttl >= answer.Header().Ttl/2 {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false // at least one PTR answer was not known
 		}
 	}
 
-	return false
+	return true
 }
 
 // handleQuestion is used to handle an incoming question
@@ -369,7 +384,6 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 	if s.service == nil {
 		return nil
 	}
-
 	switch q.Name {
 	case s.service.ServiceTypeName():
 		s.serviceTypeName(resp, s.ttl)
@@ -388,7 +402,6 @@ func (s *Server) handleQuestion(q dns.Question, resp *dns.Msg, query *dns.Msg, i
 	default:
 		// handle matching subtype query
 		for _, subtype := range s.service.Subtypes {
-			subtype = fmt.Sprintf("%s._sub.%s", subtype, s.service.ServiceName())
 			if q.Name == subtype {
 				s.composeBrowsingAnswers(resp, ifIndex)
 				if isKnownAnswer(resp, query) {
@@ -414,6 +427,21 @@ func (s *Server) composeBrowsingAnswers(resp *dns.Msg, ifIndex int) {
 	}
 	resp.Answer = append(resp.Answer, ptr)
 
+	// PTRs for subtypes
+	for _, subtype := range s.service.Subtypes {
+		subtypePTR := &dns.PTR{
+			Hdr: dns.RR_Header{
+				Name:   subtype,
+				Rrtype: dns.TypePTR,
+				Class:  dns.ClassINET,
+				Ttl:    s.ttl,
+			},
+			Ptr: s.service.ServiceInstanceName(),
+		}
+		resp.Answer = append(resp.Answer, subtypePTR)
+	}
+
+	// SRV + TXT
 	txt := &dns.TXT{
 		Hdr: dns.RR_Header{
 			Name:   s.service.ServiceInstanceName(),
@@ -525,7 +553,7 @@ func (s *Server) serviceTypeName(resp *dns.Msg, ttl uint32) {
 }
 
 // Perform probing & announcement
-//TODO: implement a proper probing & conflict resolution
+// TODO: implement a proper probing & conflict resolution
 func (s *Server) probe() {
 	q := new(dns.Msg)
 	q.SetQuestion(s.service.ServiceInstanceName(), dns.TypePTR)
@@ -733,7 +761,7 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 			default:
 				iface, _ := net.InterfaceByIndex(ifIndex)
 				if err := s.ipv4conn.SetMulticastInterface(iface); err != nil {
-					log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+					log.Printf(MulticastInterfaceError, err)
 				}
 			}
 			s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
@@ -744,7 +772,7 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 					wcm.IfIndex = intf.Index
 				default:
 					if err := s.ipv4conn.SetMulticastInterface(&intf); err != nil {
-						log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+						log.Printf(MulticastInterfaceError, err)
 					}
 				}
 				s.ipv4conn.WriteTo(buf, &wcm, ipv4Addr)
@@ -764,7 +792,7 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 			default:
 				iface, _ := net.InterfaceByIndex(ifIndex)
 				if err := s.ipv6conn.SetMulticastInterface(iface); err != nil {
-					log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+					log.Printf(MulticastInterfaceError, err)
 				}
 			}
 			s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
@@ -775,7 +803,7 @@ func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
 					wcm.IfIndex = intf.Index
 				default:
 					if err := s.ipv6conn.SetMulticastInterface(&intf); err != nil {
-						log.Printf("[WARN] mdns: Failed to set multicast interface: %v", err)
+						log.Printf(MulticastInterfaceError, err)
 					}
 				}
 				s.ipv6conn.WriteTo(buf, &wcm, ipv6Addr)
