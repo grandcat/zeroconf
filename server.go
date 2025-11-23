@@ -619,7 +619,18 @@ func (s *Server) unregister() error {
 func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int, flushCache bool) []dns.RR {
 	v4 := s.service.AddrIPv4
 	v6 := s.service.AddrIPv6
-	if len(v4) == 0 && len(v6) == 0 {
+
+	// Filter addresses to only include those reachable from the querying interface's network
+	if ifIndex != 0 {
+		iface, _ := net.InterfaceByIndex(ifIndex)
+		if iface != nil {
+			v4 = filterAddrsForNetwork(v4, iface)
+			v6 = filterAddrsForNetwork(v6, iface)
+		}
+	}
+
+	// Fallback: if no addresses match the network, use addresses from the querying interface itself
+	if len(v4) == 0 && len(v6) == 0 && ifIndex != 0 {
 		iface, _ := net.InterfaceByIndex(ifIndex)
 		if iface != nil {
 			a4, a6 := addrsForInterface(iface)
@@ -627,6 +638,7 @@ func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int, flushCache 
 			v6 = append(v6, a6...)
 		}
 	}
+
 	if ttl > 0 {
 		// RFC6762 Section 10 says A/AAAA records SHOULD
 		// use TTL of 120s, to account for network interface
@@ -662,6 +674,34 @@ func (s *Server) appendAddrs(list []dns.RR, ttl uint32, ifIndex int, flushCache 
 		list = append(list, aaaa)
 	}
 	return list
+}
+
+// filterAddrsForNetwork filters IP addresses to only include those on the same network as the interface
+func filterAddrsForNetwork(ips []net.IP, iface *net.Interface) []net.IP {
+	if iface == nil {
+		return ips
+	}
+
+	// Get all network addresses for this interface
+	ifaceAddrs, err := iface.Addrs()
+	if err != nil || len(ifaceAddrs) == 0 {
+		return ips
+	}
+
+	var filtered []net.IP
+	for _, ip := range ips {
+		// Check if this IP is on the same network as any of the interface's addresses
+		for _, ifaceAddr := range ifaceAddrs {
+			if ipnet, ok := ifaceAddr.(*net.IPNet); ok {
+				if ipnet.Contains(ip) {
+					filtered = append(filtered, ip)
+					break
+				}
+			}
+		}
+	}
+
+	return filtered
 }
 
 func addrsForInterface(iface *net.Interface) ([]net.IP, []net.IP) {
