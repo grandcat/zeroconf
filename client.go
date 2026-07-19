@@ -110,12 +110,10 @@ func (r *Resolver) Browse(ctx context.Context, service, domain string, entries c
 
 // Lookup a specific service by its name and type in a given domain.
 func (r *Resolver) Lookup(ctx context.Context, instance, service, domain string, entries chan<- *ServiceEntry) error {
-	params := defaultParams(service)
-	params.Instance = instance
-	if domain != "" {
-		params.Domain = domain
+	if domain == "" {
+		domain = "local"
 	}
-	params.Entries = entries
+	params := newLookupParams(instance, service, domain, false, entries)
 	ctx, cancel := context.WithCancel(ctx)
 	go r.c.mainloop(ctx, params)
 	err := r.c.query(params)

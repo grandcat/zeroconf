@@ -91,6 +91,32 @@ func TestNoRegister(t *testing.T) {
 	cancel()
 }
 
+func TestLookupParamsServiceInstanceName(t *testing.T) {
+	instance := "device-one"
+	service := "_lookup-filter._tcp"
+	domain := "local"
+	entries := make(chan *ServiceEntry)
+
+	// Correct path used by Resolver.Lookup: instance is set at construction.
+	params := newLookupParams(instance, service, domain, false, entries)
+	want := "device-one._lookup-filter._tcp.local."
+	if got := params.ServiceInstanceName(); got != want {
+		t.Fatalf("ServiceInstanceName() = %q, want %q", got, want)
+	}
+	if params.Instance != instance {
+		t.Fatalf("Instance = %q, want %q", params.Instance, instance)
+	}
+	if params.ServiceName() != "_lookup-filter._tcp.local." {
+		t.Fatalf("ServiceName() = %q, want %q", params.ServiceName(), "_lookup-filter._tcp.local.")
+	}
+
+	broken := defaultParams(service)
+	broken.Instance = instance
+	if got := broken.ServiceInstanceName(); got != "" {
+		t.Fatalf("mutating Instance after construction must not update ServiceInstanceName; got %q", got)
+	}
+}
+
 func TestSubtype(t *testing.T) {
 	t.Run("browse with subtype", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
