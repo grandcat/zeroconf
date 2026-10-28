@@ -440,7 +440,7 @@ func (c *client) query(params *lookupParams) error {
 
 // Pack the dns.Msg and write to available connections (multicast)
 func (c *client) sendQuery(msg *dns.Msg) error {
-	buf, err := msg.Pack()
+	buf, err := packMulticastMessage(msg)
 	if err != nil {
 		return err
 	}

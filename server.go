@@ -717,7 +717,7 @@ func (s *Server) unicastResponse(resp *dns.Msg, ifIndex int, from net.Addr) erro
 
 // multicastResponse us used to send a multicast response packet
 func (s *Server) multicastResponse(msg *dns.Msg, ifIndex int) error {
-	buf, err := msg.Pack()
+	buf, err := packMulticastMessage(msg)
 	if err != nil {
 		return err
 	}
